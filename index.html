@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>Fantasy 90</title>
+<meta name="theme-color" content="#072b1b">
+<meta name="description" content="Fantasy 90 — the 38-gameweek race">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fantasy 90">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Teko:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+:root{
+  --pitch-0:#051e13;
+  --pitch-1:#0a3520;
+  --pitch-2:#0f4a2c;
+  --pitch-3:#155c37;
+  --line-white:rgba(255,255,255,.14);
+  --cream:#f2f7f1;
+  --gold:#ffc145;
+  --gold-dk:#c48a18;
+  --silver:#c9d2da;
+  --bronze:#d98c4a;
+  --turf:#4fe3a1;
+  --danger:#ff5b5b;
+  --muted:#7fa08f;
+  --card:#0d3823;
+  --card-2:#0a2f1d;
+  --radius:18px;
+  --disp:'Teko',system-ui,sans-serif;
+  --body:'Inter',system-ui,-apple-system,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;}
+body{
+  background:
+    radial-gradient(1200px 800px at 50% -10%, var(--pitch-2), var(--pitch-0) 65%);
+  color:var(--cream);
+  font-family:var(--body);
+  min-height:100vh;
+  padding-bottom:calc(28px + env(safe-area-inset-bottom));
+  overflow-x:hidden;
+}
+
+/* ---------- Top scoreboard ---------- */
+.topbar{
+  position:sticky;top:0;z-index:40;
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background:linear-gradient(180deg,rgba(5,20,13,.97),rgba(5,20,13,.88) 70%,rgba(5,20,13,0));
+  backdrop-filter:blur(6px);
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.brandrow{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.brand{display:flex;align-items:baseline;gap:8px;}
+.brand h1{
+  font-family:'Teko',sans-serif;
+  font-weight:700;
+  font-size:34px;
+  letter-spacing:.5px;
+  margin:0;
+  line-height:.85;
+  background:linear-gradient(180deg,#fff,var(--gold) 120%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.brand .tag{font-size:10px;color:var(--muted);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;}
+.refresh-btn{
+  width:38px;height:38px;border-radius:50%;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.06);
+  color:var(--cream);display:flex;align-items:center;justify-content:center;
+  font-size:16px;cursor:pointer;flex:none;
+}
+.refresh-btn.spinning svg{animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+.gwstrip{
+  margin-top:10px;
+  display:flex;align-items:center;gap:10px;
+  background:rgba(0,0,0,.22);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:999px;
+  padding:6px 6px 6px 14px;
+}
+.gwstrip .lbl{font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;font-weight:700;white-space:nowrap;}
+.gwstrip .num{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--cream);white-space:nowrap;}
+.pill{
+  margin-left:auto;
+  font-size:11px;font-weight:700;letter-spacing:.5px;
+  padding:6px 12px;border-radius:999px;white-space:nowrap;
+  display:flex;align-items:center;gap:6px;
+}
+.pill.completed{background:rgba(79,227,161,.14);color:var(--turf);border:1px solid rgba(79,227,161,.35);}
+.pill.inprogress{background:rgba(255,193,69,.15);color:var(--gold);border:1px solid rgba(255,193,69,.4);animation:pulse 1.8s ease-in-out infinite;}
+.pill.notstarted{background:rgba(255,255,255,.05);color:var(--muted);border:1px solid rgba(255,255,255,.1);}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.55;}}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+
+.ticker-wrap{
+  margin-top:9px;overflow:hidden;border-radius:10px;
+  background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.06);
+  padding:6px 0;
+}
+.ticker{
+  display:inline-flex;white-space:nowrap;
+  animation:ticker 22s linear infinite;
+  font-family:var(--mono);font-size:11.5px;color:var(--gold);
+  letter-spacing:.3px;
+}
+.ticker span{padding:0 22px;}
+.ticker span.sep{color:var(--muted);}
+@keyframes ticker{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+@media (prefers-reduced-motion:reduce){
+  .ticker{animation:none;} .pill.inprogress{animation:none;}
+}
+
+/* ---------- layout ---------- */
+main{padding:16px;max-width:760px;margin:0 auto;}
+.section{margin-bottom:26px;}
+.sec-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px;gap:8px;}
+.sec-head h2{
+  font-family:'Teko',sans-serif;font-weight:600;font-size:24px;letter-spacing:.3px;
+  margin:0;display:flex;align-items:center;gap:8px;color:var(--cream);
+}
+.sec-head .emoji{font-size:20px;}
+.sec-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+.leader-chip{
+  display:flex;align-items:center;gap:6px;
+  background:rgba(255,193,69,.1);border:1px solid rgba(255,193,69,.3);
+  border-radius:999px;padding:5px 10px 5px 6px;
+  font-size:11.5px;font-weight:700;color:var(--gold);white-space:nowrap;
+}
+.leader-chip .swatch{width:9px;height:9px;border-radius:50%;}
+
+.card{
+  background:linear-gradient(180deg,var(--card),var(--card-2));
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:var(--radius);
+  padding:14px 10px 8px;
+  box-shadow:0 10px 30px -14px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.04);
+  position:relative;
+}
+.card.hero{
+  border-color:rgba(255,193,69,.28);
+  box-shadow:0 14px 40px -16px rgba(255,193,69,.18), 0 10px 30px -14px rgba(0,0,0,.6);
+}
+.chart-wrap{position:relative;height:230px;}
+.hero .chart-wrap{height:270px;}
+
+/* leaderboard */
+.board{margin-top:10px;display:flex;flex-direction:column;gap:5px;}
+.row{
+  display:flex;align-items:center;gap:9px;
+  padding:7px 9px;border-radius:10px;
+  background:rgba(255,255,255,.03);
+  font-size:12.5px;
+}
+.row.top1{background:linear-gradient(90deg,rgba(255,193,69,.16),rgba(255,193,69,.03));border:1px solid rgba(255,193,69,.28);}
+.row.top2{background:linear-gradient(90deg,rgba(201,210,218,.13),rgba(201,210,218,.02));border:1px solid rgba(201,210,218,.22);}
+.row.top3{background:linear-gradient(90deg,rgba(217,140,74,.13),rgba(217,140,74,.02));border:1px solid rgba(217,140,74,.22);}
+.rank{
+  font-family:var(--mono);font-weight:700;font-size:11px;
+  width:20px;height:20px;border-radius:50%;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.06);color:var(--muted);
+}
+.row.top1 .rank{background:var(--gold);color:#1a1200;}
+.row.top2 .rank{background:var(--silver);color:#1a1200;}
+.row.top3 .rank{background:var(--bronze);color:#1a1200;}
+.row .swatch{width:9px;height:9px;border-radius:50%;flex:none;}
+.row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}
+.row .val{font-family:var(--mono);font-weight:700;font-size:13px;flex:none;}
+.row .val.pos{color:var(--turf);}
+.row .val.neg{color:var(--danger);}
+.row .sub{font-family:var(--mono);font-size:10.5px;color:var(--muted);flex:none;width:30px;text-align:right;}
+.board-more{
+  text-align:center;font-size:11px;color:var(--muted);padding:6px;cursor:pointer;
+  border-top:1px dashed rgba(255,255,255,.08);margin-top:2px;
+}
+
+footer{
+  max-width:760px;margin:10px auto 0;padding:14px 20px 6px;
+  text-align:center;color:var(--muted);font-size:10.5px;line-height:1.7;
+}
+footer .rules{
+  display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin-bottom:10px;
+  font-family:var(--mono);font-size:11px;color:var(--muted);
+}
+footer .rules b{color:var(--gold);}
+.loading-screen{
+  position:fixed;inset:0;z-index:100;background:var(--pitch-0);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  transition:opacity .4s ease;
+}
+.loading-screen.hide{opacity:0;pointer-events:none;}
+.loading-screen .ball{
+  width:46px;height:46px;border-radius:50%;
+  border:3px solid rgba(255,255,255,.12);border-top-color:var(--gold);
+  animation:spin .8s linear infinite;
+}
+.loading-screen p{color:var(--muted);font-size:12px;letter-spacing:1px;text-transform:uppercase;font-family:var(--mono);}
+.err-box{
+  margin:16px;padding:16px;border-radius:14px;background:rgba(255,91,91,.08);
+  border:1px solid rgba(255,91,91,.3);color:#ffb3b3;font-size:13px;
+}
+.install-toast{
+  position:fixed;left:16px;right:16px;bottom:calc(14px + env(safe-area-inset-bottom));
+  background:var(--card);border:1px solid rgba(255,193,69,.35);border-radius:14px;
+  padding:12px 14px;display:flex;align-items:center;gap:10px;z-index:60;
+  box-shadow:0 10px 30px -10px rgba(0,0,0,.6);
+  transform:translateY(140%);transition:transform .35s ease;
+}
+.install-toast.show{transform:translateY(0);}
+.install-toast .txt{flex:1;font-size:12px;color:var(--cream);}
+.install-toast button{
+  background:var(--gold);color:#1a1200;border:none;border-radius:8px;
+  padding:8px 12px;font-weight:700;font-size:12px;cursor:pointer;
+}
+.install-toast .x{background:none;color:var(--muted);padding:4px 6px;font-weight:400;}
+</style>
+</head>
+<body>
+
+<div class="loading-screen" id="loadingScreen">
+  <div class="ball"></div>
+  <p id="loadingMsg">Loading the pitch…</p>
+</div>
+
+<div class="topbar">
+  <div class="brandrow">
+    <div class="brand">
+      <h1>Fantasy 90</h1>
+    </div>
+    <button class="refresh-btn" id="refreshBtn" aria-label="Refresh">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+    </button>
+  </div>
+  <div class="gwstrip">
+    <span class="lbl">Gameweek</span>
+    <span class="num" id="gwNum">–/38</span>
+    <span class="pill notstarted" id="statusPill"><span class="dot"></span><span id="statusText">…</span></span>
+  </div>
+  <div class="ticker-wrap">
+    <div class="ticker" id="tickerEl"><span>loading…</span></div>
+  </div>
+</div>
+
+<main id="mainContent" style="display:none;">
+
+  <div class="section" id="secGwPoints">
+    <div class="sec-head">
+      <div>
+        <h2><span class="emoji">⚡</span>Gameweek Points</h2>
+        <div class="sec-sub">This week's sprint — ranked by weekly balance</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="chart-wrap"><canvas id="chartGwPoints"></canvas></div>
+    </div>
+    <div class="board" id="boardGwPoints"></div>
+  </div>
+
+  <div class="section" id="secTotalPoints">
+    <div class="sec-head">
+      <div>
+        <h2><span class="emoji">🏆</span>Total Points — The League Table</h2>
+        <div class="sec-sub">Cumulative points, gameweek by gameweek</div>
+      </div>
+      <div class="leader-chip" id="chipTotalPoints"><span class="swatch"></span><span>–</span></div>
+    </div>
+    <div class="card hero">
+      <div class="chart-wrap"><canvas id="chartTotalPoints"></canvas></div>
+    </div>
+    <div class="board" id="boardTotalPoints"></div>
+  </div>
+
+  <div class="section" id="secBalance">
+    <div class="sec-head">
+      <div>
+        <h2><span class="emoji">💰</span>Balance Ledger</h2>
+        <div class="sec-sub">Who's up, who's down — ฿ running total</div>
+      </div>
+      <div class="leader-chip" id="chipBalance"><span class="swatch"></span><span>–</span></div>
+    </div>
+    <div class="card">
+      <div class="chart-wrap"><canvas id="chartBalance"></canvas></div>
+    </div>
+    <div class="board" id="boardBalance"></div>
+  </div>
+
+  <footer>
+    <div class="rules" id="rulesRow"></div>
+    <div id="lastUpdated">—</div>
+    <div>Fantasy 90 · a 38-gameweek race</div>
+  </footer>
+
+</main>
+
+<div id="errBox"></div>
+
+<div class="install-toast" id="installToast">
+  <div class="txt">Add Fantasy 90 to your home screen for the full app feel.</div>
+  <button id="installBtn">Install</button>
+  <button class="x" id="installDismiss">✕</button>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
+const TOTAL_GAMEWEEKS = 38;
+const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
+const GW_BLOCK_WIDTH = 4;     // GW Points, Total Points, GW Balance, Total Balance
+const STATUS_ROW_INDEX = 14;  // 0-indexed row 15
+const POOL_ROW_INDEX = 16;    // "Total point pool" row
+const META_START_ROW = 19;    // "11,no of players" etc (0-indexed row 20 -> actually adjust below)
+
+const PLAYER_COLORS = [
+  "#4fe3a1", "#ffc145", "#7fb2ff", "#ff8fb1", "#c9a6ff",
+  "#ff9d5c", "#5cd6ff", "#e0e35c", "#ff6b6b", "#8ce3c4", "#d9a6ff"
+];
+
+let chartGwPointsInst, chartTotalPointsInst, chartBalanceInst;
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+function gwColStart(gw){ return GW_BLOCK_START_COL + (gw - 1) * GW_BLOCK_WIDTH; }
+function num(v){ const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function fmtBaht(v){
+  const s = Math.abs(v).toLocaleString();
+  return (v < 0 ? "-฿" : "฿") + s;
+}
+function normStatus(raw){
+  const s = (raw || "").trim().toUpperCase();
+  if (["CONFIRMED","COMPLETED","FINISHED","FINAL","DONE"].includes(s)) return "completed";
+  if (["IN PROGRESS","LIVE","ONGOING","IN-PROGRESS"].includes(s)) return "inprogress";
+  return "notstarted";
+}
+function statusLabel(s){
+  if (s === "completed") return "FULL TIME";
+  if (s === "inprogress") return "LIVE";
+  return "KICK OFF PENDING";
+}
+function competitionRank(sortedDescValues){
+  // returns rank array (1-indexed, ties share rank, standard "1224" skip)
+  const ranks = [];
+  let lastVal = null, lastRank = 0;
+  sortedDescValues.forEach((v, i) => {
+    if (v !== lastVal){ lastRank = i + 1; lastVal = v; }
+    ranks.push(lastRank);
+  });
+  return ranks;
+}
+function initials(name){
+  return name.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join("").toUpperCase();
+}
+
+/* ============================================================
+   PARSE CSV
+   ============================================================ */
+function parseSheet(rows){
+  // rows: array of arrays (strings), as parsed by PapaParse
+  const playerRows = [];
+  for (let r = 2; r < rows.length; r++){
+    const row = rows[r];
+    if (!row || !row[0] || !row[0].trim()) break; // stop at first blank name row
+    playerRows.push(row);
+  }
+
+  const statusRow = rows[STATUS_ROW_INDEX] || [];
+  const poolRow = rows[POOL_ROW_INDEX] || [];
+
+  const gwStatus = [];
+  for (let gw = 1; gw <= TOTAL_GAMEWEEKS; gw++){
+    const c = gwColStart(gw);
+    gwStatus.push(normStatus(statusRow[c + 3]));
+  }
+
+  // latest gameweek that is completed or in progress
+  let latestGw = 0;
+  for (let gw = 1; gw <= TOTAL_GAMEWEEKS; gw++){
+    if (gwStatus[gw-1] === "completed" || gwStatus[gw-1] === "inprogress") latestGw = gw;
+  }
+
+  const players = playerRows.map((row, idx) => {
+    const name = row[0].trim();
+    const gwPoints = [], totalPoints = [], gwBalance = [], totalBalance = [];
+    for (let gw = 1; gw <= TOTAL_GAMEWEEKS; gw++){
+      const c = gwColStart(gw);
+      const played = gwStatus[gw-1] === "completed" || gwStatus[gw-1] === "inprogress";
+      gwPoints.push(played ? num(row[c]) : null);
+      totalPoints.push(played ? num(row[c+1]) : null);
+      gwBalance.push(played ? num(row[c+2]) : null);
+      totalBalance.push(played ? num(row[c+3]) : null);
+    }
+    return {
+      name,
+      color: PLAYER_COLORS[idx % PLAYER_COLORS.length],
+      gwPoints, totalPoints, gwBalance, totalBalance
+    };
+  });
+
+  let poolLatest = 0;
+  if (latestGw > 0){
+    const c = gwColStart(latestGw);
+    poolLatest = num(poolRow[c + 3]);
+  }
+
+  // meta rules (no of players / per week / winner prizes / top scorer) - scan for label rows
+  const meta = {};
+  for (let r = 0; r < rows.length; r++){
+    const row = rows[r];
+    if (!row) continue;
+    const label = (row[1] || "").trim().toLowerCase();
+    const value = (row[0] || "").trim();
+    if (!value) continue;
+    if (label.includes("no of players")) meta.players = value;
+    else if (label.includes("per week")) meta.perWeek = value;
+    else if (label.includes("weekly winner")) meta.weeklyWinner = value;
+    else if (label.includes("second winner")) meta.secondWinner = value;
+    else if (label.includes("season top scorer")) meta.topScorer = value;
+  }
+
+  return { players, gwStatus, latestGw, poolLatest, meta };
+}
+
+/* ============================================================
+   RENDER: scoreboard header
+   ============================================================ */
+function renderHeader(data){
+  const { latestGw, gwStatus, poolLatest, meta } = data;
+  document.getElementById("gwNum").textContent = `${latestGw || 0}/${TOTAL_GAMEWEEKS}`;
+
+  const st = latestGw > 0 ? gwStatus[latestGw-1] : "notstarted";
+  const pill = document.getElementById("statusPill");
+  pill.className = "pill " + st;
+  document.getElementById("statusText").textContent = latestGw > 0 ? statusLabel(st) : "SEASON NOT STARTED";
+
+  const tickerParts = [];
+  if (latestGw > 0) tickerParts.push(`💰 GW${latestGw} PRIZE POOL: ${fmtBaht(poolLatest)}`);
+  if (meta.perWeek) tickerParts.push(`ENTRY: ฿${meta.perWeek} / WEEK`);
+  if (meta.weeklyWinner) tickerParts.push(`🥇 WEEKLY WINNER: ฿${meta.weeklyWinner}`);
+  if (meta.secondWinner) tickerParts.push(`🥈 RUNNER-UP: ฿${meta.secondWinner}`);
+  if (meta.topScorer) tickerParts.push(`⭐ SEASON TOP SCORER: ฿${meta.topScorer}`);
+  tickerParts.push(`${TOTAL_GAMEWEEKS - latestGw} GAMEWEEKS TO THE FINISH LINE 🏁`);
+
+  const joined = tickerParts.map(t => `<span>${t}</span><span class="sep">•</span>`).join("");
+  document.getElementById("tickerEl").innerHTML = joined + joined; // duplicate for seamless loop
+
+  document.getElementById("rulesRow").innerHTML = [
+    meta.players ? `<span><b>${meta.players}</b> managers</span>` : "",
+    meta.perWeek ? `<span><b>฿${meta.perWeek}</b>/week buy-in</span>` : "",
+    meta.weeklyWinner ? `<span>🥇 <b>฿${meta.weeklyWinner}</b></span>` : "",
+    meta.secondWinner ? `<span>🥈 <b>฿${meta.secondWinner}</b></span>` : "",
+    meta.topScorer ? `<span>⭐ <b>฿${meta.topScorer}</b></span>` : "",
+  ].filter(Boolean).join("");
+
+  document.getElementById("lastUpdated").textContent = "Last synced " + new Date().toLocaleString([], {hour:'2-digit', minute:'2-digit', month:'short', day:'numeric'});
+}
+
+/* ============================================================
+   CHART.JS: shared racetrack plugin (lane stripes + finish flag)
+   ============================================================ */
+const racetrackPlugin = {
+  id: "racetrack",
+  beforeDraw(chart){
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea) return;
+    const { left, right, top, bottom } = chartArea;
+    // alternating lane bands (horizontal, using y ticks)
+    ctx.save();
+    const yTicks = scales.y.ticks;
+    for (let i = 0; i < yTicks.length - 1; i++){
+      if (i % 2 !== 0) continue;
+      const y0 = scales.y.getPixelForValue(yTicks[i].value);
+      const y1 = scales.y.getPixelForValue(yTicks[i+1] ? yTicks[i+1].value : yTicks[i].value);
+      ctx.fillStyle = "rgba(255,255,255,0.018)";
+      ctx.fillRect(left, Math.min(y0,y1), right-left, Math.abs(y1-y0));
+    }
+    ctx.restore();
+  },
+  afterDraw(chart){
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea) return;
+    const { top, bottom, right } = chartArea;
+    const x = scales.x;
+    const finishPx = x.getPixelForValue(x.max);
+    // dashed finish line at GW38
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.setLineDash([3,4]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(finishPx, top);
+    ctx.lineTo(finishPx, bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // checkered flag marker
+    const fx = Math.min(finishPx, right - 2);
+    ctx.font = "13px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("🏁", fx, top - 4 < 10 ? top + 10 : top - 4);
+    ctx.restore();
+  }
+};
+if (window.Chart) Chart.register(racetrackPlugin);
+
+function baseChartOptions(yLabel, latestGw, opts){
+  opts = opts || {};
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
+    layout: { padding: { top: 16, right: 6, left: 2, bottom: 0 } },
+    scales: {
+      x: {
+        type: "linear",
+        min: 1, max: TOTAL_GAMEWEEKS,
+        ticks: {
+          stepSize: opts.xStep || 5,
+          color: "#7fa08f",
+          font: { size: 10, family: "IBM Plex Mono, monospace" },
+          maxRotation: 0,
+        },
+        grid: { color: "rgba(255,255,255,0.05)", drawTicks:false },
+        border: { color: "rgba(255,255,255,0.08)" },
+        title: { display:false }
+      },
+      y: {
+        grid: { color: "rgba(255,255,255,0.05)", drawTicks:false },
+        border: { display:false },
+        ticks: { color: "#7fa08f", font: { size: 10, family: "IBM Plex Mono, monospace" } },
+        beginAtZero: opts.beginAtZero !== false
+      }
+    },
+    plugins: {
+      legend: { display:false },
+      tooltip: {
+        backgroundColor: "rgba(5,25,16,0.95)",
+        borderColor: "rgba(255,255,255,0.12)",
+        borderWidth: 1,
+        titleFont: { family:"IBM Plex Mono, monospace", size:11, weight:"700" },
+        bodyFont: { family:"IBM Plex Mono, monospace", size:11 },
+        padding: 9,
+        titleColor: "#ffc145",
+        callbacks: {
+          title: (items) => "GW " + items[0].parsed.x,
+        }
+      }
+    },
+    elements: {
+      point: { radius: 0, hitRadius: 8, hoverRadius: 4 },
+      line: { borderWidth: 2, tension: 0.28 }
+    }
+  };
+}
+
+function toXY(arr){
+  const pts = [];
+  for (let i = 0; i < arr.length; i++){
+    if (arr[i] === null || arr[i] === undefined) continue;
+    pts.push({ x: i+1, y: arr[i] });
+  }
+  return pts;
+}
+
+function endpointLabelsPlugin(getLabel){
+  return {
+    id: "endpointLabels",
+    afterDatasetsDraw(chart){
+      const { ctx } = chart;
+      chart.data.datasets.forEach((ds, i) => {
+        const meta = chart.getDatasetMeta(i);
+        if (meta.hidden || !ds.data.length) return;
+        const lastPoint = meta.data[meta.data.length - 1];
+        if (!lastPoint) return;
+        const info = getLabel(ds, i);
+        if (!info) return;
+        ctx.save();
+        const px = lastPoint.x, py = lastPoint.y;
+        ctx.beginPath();
+        ctx.arc(px, py, info.big ? 5 : 3, 0, Math.PI*2);
+        ctx.fillStyle = ds.borderColor;
+        ctx.shadowColor = info.big ? ds.borderColor : "transparent";
+        ctx.shadowBlur = info.big ? 8 : 0;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        if (info.badge){
+          ctx.font = "700 9px IBM Plex Mono, monospace";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          const bx = px + 8;
+          const tw = ctx.measureText(info.badge).width;
+          ctx.fillStyle = info.badgeBg || "rgba(0,0,0,0.6)";
+          ctx.beginPath();
+          ctx.roundRect ? ctx.roundRect(bx-3, py-8, tw+6, 16, 8) : ctx.rect(bx-3, py-8, tw+6, 16);
+          ctx.fill();
+          ctx.fillStyle = info.badgeColor || "#1a1200";
+          ctx.fillText(info.badge, bx, py);
+        }
+        ctx.restore();
+      });
+    }
+  };
+}
+
+/* ============================================================
+   RENDER: leaderboard rows
+   ============================================================ */
+function rowClass(rank){
+  if (rank === 1) return "top1";
+  if (rank === 2) return "top2";
+  if (rank === 3) return "top3";
+  return "";
+}
+function medalFor(rank){
+  if (rank === 1) return "🥇";
+  if (rank === 2) return "🥈";
+  if (rank === 3) return "🥉";
+  return rank;
+}
+
+function renderGwPointsSection(data){
+  const { players, latestGw } = data;
+  if (latestGw === 0){
+    document.getElementById("boardGwPoints").innerHTML = `<div class="row"><span class="nm">Season hasn't kicked off yet.</span></div>`;
+    return;
+  }
+  const idx = latestGw - 1;
+  const list = players.map(p => ({
+    name: p.name, color: p.color,
+    gwPts: p.gwPoints[idx], gwBal: p.gwBalance[idx]
+  })).sort((a,b) => b.gwBal - a.gwBal);
+
+  const sortedBal = list.map(x => x.gwBal);
+  const ranks = competitionRank(sortedBal);
+
+  // chart
+  const ctx = document.getElementById("chartGwPoints").getContext("2d");
+  if (chartGwPointsInst) chartGwPointsInst.destroy();
+  const rankByName = {};
+  list.forEach((x, i) => { rankByName[x.name] = { rank: ranks[i], bal: x.gwBal }; });
+
+  const datasets = players.map(p => {
+    const info = rankByName[p.name];
+    const highlighted = info.bal > 0;
+    return {
+      label: p.name,
+      data: toXY(p.gwPoints),
+      borderColor: highlighted ? p.color : "rgba(255,255,255,0.16)",
+      backgroundColor: "transparent",
+      borderWidth: highlighted ? 2.4 : 1.3,
+      order: highlighted ? 1 : 2,
+    };
+  });
+
+  chartGwPointsInst = new Chart(ctx, {
+    type: "line",
+    data: { datasets },
+    options: Object.assign(baseChartOptions("pts", latestGw), {
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          backgroundColor: "rgba(5,25,16,0.95)", borderColor:"rgba(255,255,255,0.12)", borderWidth:1,
+          titleColor:"#ffc145", padding:9,
+          titleFont:{family:"IBM Plex Mono, monospace", size:11, weight:"700"},
+          bodyFont:{family:"IBM Plex Mono, monospace", size:11},
+          callbacks: {
+            title:(items)=>"GW "+items[0].parsed.x,
+            label:(item)=> `${item.dataset.label}: ${item.parsed.y} pts`
+          }
+        }
+      }
+    }),
+    plugins: [endpointLabelsPlugin((ds) => {
+      const info = rankByName[ds.label];
+      if (!info || info.bal <= 0) return { big:false };
+      return {
+        big:true,
+        badge: `#${info.rank}`,
+        badgeBg: info.rank===1?"#ffc145":info.rank===2?"#c9d2da":info.rank===3?"#d98c4a":"rgba(0,0,0,.6)",
+        badgeColor: info.rank<=3? "#1a1200":"#fff"
+      };
+    })]
+  });
+
+  // leaderboard list (top 5 + toggle)
+  renderBoard("boardGwPoints", list.map((x,i)=>({
+    rank: ranks[i], name:x.name, color:x.color,
+    val: x.gwBal, valFmt: (x.gwBal>0?"+":"")+fmtBaht(x.gwBal).replace("฿","฿"),
+    sub: x.gwPts+"pt", positive: x.gwBal>0
+  })), true);
+}
+
+function renderTotalPointsSection(data){
+  const { players, latestGw } = data;
+  if (latestGw === 0){
+    document.getElementById("boardTotalPoints").innerHTML = `<div class="row"><span class="nm">Season hasn't kicked off yet.</span></div>`;
+    document.getElementById("chipTotalPoints").innerHTML = `<span>Kick-off pending</span>`;
+    return;
+  }
+  const idx = latestGw - 1;
+  const list = players.map(p => ({ name:p.name, color:p.color, total: p.totalPoints[idx] }))
+    .sort((a,b)=>b.total-a.total);
+  const maxTotal = list[0].total;
+
+  const ctx = document.getElementById("chartTotalPoints").getContext("2d");
+  if (chartTotalPointsInst) chartTotalPointsInst.destroy();
+
+  const datasets = players.map(p => {
+    const isLeader = p.totalPoints[idx] === maxTotal;
+    return {
+      label: p.name,
+      data: toXY(p.totalPoints),
+      borderColor: isLeader ? "#ffc145" : p.color,
+      backgroundColor: "transparent",
+      borderWidth: isLeader ? 3 : 1.4,
+      order: isLeader ? 1 : 2,
+    };
+  });
+
+  chartTotalPointsInst = new Chart(ctx, {
+    type:"line",
+    data:{ datasets },
+    options: Object.assign(baseChartOptions("pts", latestGw, {xStep:5}), {
+      plugins: {
+        legend:{display:false},
+        tooltip: {
+          backgroundColor:"rgba(5,25,16,0.95)", borderColor:"rgba(255,255,255,0.12)", borderWidth:1,
+          titleColor:"#ffc145", padding:9,
+          titleFont:{family:"IBM Plex Mono, monospace", size:11, weight:"700"},
+          bodyFont:{family:"IBM Plex Mono, monospace", size:11},
+          callbacks: {
+            title:(items)=>"GW "+items[0].parsed.x,
+            label:(item)=> `${item.dataset.label}: ${item.parsed.y} pts`
+          }
+        }
+      }
+    }),
+    plugins: [endpointLabelsPlugin((ds)=>{
+      const isLeader = ds.borderColor === "#ffc145";
+      return isLeader ? { big:true, badge:"👑", badgeBg:"#ffc145", badgeColor:"#1a1200" } : { big:false };
+    })]
+  });
+
+  document.getElementById("chipTotalPoints").innerHTML =
+    `<span class="swatch" style="background:${list[0].color}"></span><span>👑 ${list[0].name} · ${list[0].total}pt</span>`;
+
+  renderBoard("boardTotalPoints", list.map((x,i)=>({
+    rank:i+1, name:x.name, color:x.color, val:x.total, valFmt:x.total+" pt", sub:"", positive:null
+  })), false);
+}
+
+function renderBalanceSection(data){
+  const { players, latestGw } = data;
+  if (latestGw === 0){
+    document.getElementById("boardBalance").innerHTML = `<div class="row"><span class="nm">Season hasn't kicked off yet.</span></div>`;
+    document.getElementById("chipBalance").innerHTML = `<span>Kick-off pending</span>`;
+    return;
+  }
+  const idx = latestGw - 1;
+  const list = players.map(p => ({ name:p.name, color:p.color, bal: p.totalBalance[idx] }))
+    .sort((a,b)=>b.bal-a.bal);
+  const maxBal = list[0].bal;
+
+  const ctx = document.getElementById("chartBalance").getContext("2d");
+  if (chartBalanceInst) chartBalanceInst.destroy();
+
+  const datasets = players.map(p => {
+    const isLeader = p.totalBalance[idx] === maxBal;
+    return {
+      label: p.name,
+      data: toXY(p.totalBalance),
+      borderColor: isLeader ? "#ffc145" : p.color,
+      backgroundColor: "transparent",
+      borderWidth: isLeader ? 3 : 1.4,
+      order: isLeader ? 1 : 2,
+    };
+  });
+
+  chartBalanceInst = new Chart(ctx, {
+    type:"line",
+    data:{ datasets },
+    options: Object.assign(baseChartOptions("baht", latestGw, {xStep:5, beginAtZero:false}), {
+      plugins: {
+        legend:{display:false},
+        tooltip: {
+          backgroundColor:"rgba(5,25,16,0.95)", borderColor:"rgba(255,255,255,0.12)", borderWidth:1,
+          titleColor:"#ffc145", padding:9,
+          titleFont:{family:"IBM Plex Mono, monospace", size:11, weight:"700"},
+          bodyFont:{family:"IBM Plex Mono, monospace", size:11},
+          callbacks: {
+            title:(items)=>"GW "+items[0].parsed.x,
+            label:(item)=> `${item.dataset.label}: ${fmtBaht(item.parsed.y)}`
+          }
+        }
+      }
+    }),
+    plugins: [
+      {
+        id:"zeroLine",
+        afterDraw(chart){
+          const { ctx, chartArea, scales } = chart;
+          if (!chartArea) return;
+          const y0 = scales.y.getPixelForValue(0);
+          ctx.save();
+          ctx.strokeStyle = "rgba(255,255,255,0.25)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2,3]);
+          ctx.beginPath();
+          ctx.moveTo(chartArea.left, y0);
+          ctx.lineTo(chartArea.right, y0);
+          ctx.stroke();
+          ctx.restore();
+        }
+      },
+      endpointLabelsPlugin((ds)=>{
+        const isLeader = ds.borderColor === "#ffc145";
+        return isLeader ? { big:true, badge:"💰", badgeBg:"#ffc145", badgeColor:"#1a1200" } : { big:false };
+      })
+    ]
+  });
+
+  document.getElementById("chipBalance").innerHTML =
+    `<span class="swatch" style="background:${list[0].color}"></span><span>💰 ${list[0].name} · ${fmtBaht(list[0].bal)}</span>`;
+
+  renderBoard("boardBalance", list.map((x,i)=>({
+    rank:i+1, name:x.name, color:x.color, val:x.bal,
+    valFmt: fmtBaht(x.bal), sub:"", positive: x.bal>=0
+  })), false);
+}
+
+function renderBoard(elId, items, rankOnlyPositive){
+  const el = document.getElementById(elId);
+  const showCount = 5;
+  function line(x){
+    const rankDisplay = rankOnlyPositive ? (x.positive ? medalFor(x.rank) : "–") : medalFor(x.rank);
+    const cls = (rankOnlyPositive ? x.positive : true) ? rowClass(x.rank) : "";
+    const valClass = x.positive === null ? "" : (x.positive ? "pos" : "neg");
+    return `<div class="row ${cls}">
+      <span class="rank">${rankDisplay}</span>
+      <span class="swatch" style="background:${x.color}"></span>
+      <span class="nm">${x.name}</span>
+      ${x.sub ? `<span class="sub">${x.sub}</span>` : ""}
+      <span class="val ${valClass}">${x.valFmt}</span>
+    </div>`;
+  }
+  const top = items.slice(0, showCount).map(line).join("");
+  const rest = items.slice(showCount).map(line).join("");
+  el.innerHTML = top + (rest ? `<div id="${elId}-rest" style="display:none">${rest}</div>
+    <div class="board-more" id="${elId}-more">Show all ${items.length} managers ▾</div>` : "");
+  const moreBtn = document.getElementById(elId+"-more");
+  if (moreBtn){
+    moreBtn.addEventListener("click", () => {
+      const restEl = document.getElementById(elId+"-rest");
+      const expanded = restEl.style.display !== "none";
+      restEl.style.display = expanded ? "none" : "block";
+      moreBtn.textContent = expanded ? `Show all ${items.length} managers ▾` : "Show less ▴";
+    });
+  }
+}
+
+/* ============================================================
+   LOAD + BOOT
+   ============================================================ */
+async function loadData(){
+  const res = await fetch(CSV_URL + (CSV_URL.includes("?") ? "&" : "?") + "_ts=" + Date.now());
+  if (!res.ok) throw new Error("Network response was not ok (" + res.status + ")");
+  const text = await res.text();
+  const parsed = Papa.parse(text, { skipEmptyLines: false });
+  return parseSheet(parsed.data);
+}
+
+async function boot(isRefresh){
+  const loadingScreen = document.getElementById("loadingScreen");
+  const refreshBtn = document.getElementById("refreshBtn");
+  const errBox = document.getElementById("errBox");
+  errBox.innerHTML = "";
+  if (isRefresh) refreshBtn.classList.add("spinning");
+  try {
+    const data = await loadData();
+    renderHeader(data);
+    renderGwPointsSection(data);
+    renderTotalPointsSection(data);
+    renderBalanceSection(data);
+    document.getElementById("mainContent").style.display = "block";
+    loadingScreen.classList.add("hide");
+  } catch (e){
+    console.error(e);
+    errBox.innerHTML = `<div class="err-box">⚠️ Couldn't load the latest scores. Check your connection and tap refresh.<br><span style="opacity:.7;font-size:11px">${(e && e.message) || ""}</span></div>`;
+    loadingScreen.classList.add("hide");
+    document.getElementById("mainContent").style.display = "block";
+  } finally {
+    if (isRefresh) setTimeout(()=>refreshBtn.classList.remove("spinning"), 400);
+  }
+}
+
+document.getElementById("refreshBtn").addEventListener("click", () => boot(true));
+boot(false);
+
+/* ============================================================
+   PWA install prompt + service worker
+   ============================================================ */
+let deferredInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (!localStorage_safe_get("f90_install_dismissed")){
+    document.getElementById("installToast").classList.add("show");
+  }
+});
+function localStorage_safe_get(k){
+  try { return window.localStorage.getItem(k); } catch(e){ return null; }
+}
+function localStorage_safe_set(k,v){
+  try { window.localStorage.setItem(k,v); } catch(e){}
+}
+document.getElementById("installBtn").addEventListener("click", async () => {
+  document.getElementById("installToast").classList.remove("show");
+  if (deferredInstallPrompt){
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+  }
+});
+document.getElementById("installDismiss").addEventListener("click", () => {
+  document.getElementById("installToast").classList.remove("show");
+  localStorage_safe_set("f90_install_dismissed", "1");
+});
+
+if ("serviceWorker" in navigator){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
