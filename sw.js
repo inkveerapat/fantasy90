@@ -1,4 +1,4 @@
-const CACHE_NAME = "fantasy90-shell-v1";
+const CACHE_NAME = "fantasy90-shell-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -18,7 +18,12 @@ const APP_SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).catch(() => {})
+    caches.open(CACHE_NAME).then((cache) =>
+      // Cache each file independently — if one 404s (e.g. an icon that didn't
+      // upload), the rest of the app shell still gets cached instead of the
+      // whole install silently failing (cache.addAll is all-or-nothing).
+      Promise.allSettled(APP_SHELL.map((url) => cache.add(url)))
+    )
   );
   self.skipWaiting();
 });
