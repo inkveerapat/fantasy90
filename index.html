@@ -3,6 +3,10 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v1.3.0 — Clearer messaging when the sheet's own live-score formula errors out
+           (shows "SHEET SYNC ERROR" instead of a misleading "SEASON NOT
+           STARTED"). Added a background safety-net fix for a white-space
+           rendering gap some mobile browsers showed below the footer.
   v1.2.0 — Leaderboards are now clickable history: tap any past gameweek on a
            chart to see the standings as of that week (gold marker line shows
            what's selected; "Jump to latest" resets it). Gameweek Points list
@@ -54,6 +58,7 @@
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{margin:0;padding:0;}
+html{background:var(--pitch-0);min-height:100%;}
 body{
   background:
     radial-gradient(1200px 800px at 50% -10%, var(--pitch-2), var(--pitch-0) 65%);
@@ -114,6 +119,7 @@ body{
 .pill.completed{background:rgba(79,227,161,.14);color:var(--turf);border:1px solid rgba(79,227,161,.35);}
 .pill.inprogress{background:rgba(255,193,69,.15);color:var(--gold);border:1px solid rgba(255,193,69,.4);animation:pulse 1.8s ease-in-out infinite;}
 .pill.notstarted{background:rgba(255,255,255,.05);color:var(--muted);border:1px solid rgba(255,255,255,.1);}
+.pill.error{background:rgba(255,91,91,.14);color:var(--danger);border:1px solid rgba(255,91,91,.35);}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.55;}}
 .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
 
@@ -345,7 +351,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "1.2.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "1.3.0"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -374,11 +380,13 @@ function normStatus(raw){
   const s = (raw || "").trim().toUpperCase();
   if (["CONFIRMED","COMPLETED","FINISHED","FINAL","DONE"].includes(s)) return "completed";
   if (["IN PROGRESS","LIVE","ONGOING","IN-PROGRESS"].includes(s)) return "inprogress";
+  if (s.includes("ERROR")) return "error"; // e.g. sheet's live-score formula returned "Error Reading API"
   return "notstarted";
 }
 function statusLabel(s){
   if (s === "completed") return "FULL TIME";
   if (s === "inprogress") return "LIVE";
+  if (s === "error") return "SHEET SYNC ERROR";
   return "KICK OFF PENDING";
 }
 function competitionRank(sortedDescValues){
@@ -416,10 +424,17 @@ function parseSheet(rows){
     gwStatus.push(normStatus(statusRow[c + 3]));
   }
 
-  // latest gameweek that is completed or in progress
+  // latest gameweek that is completed or in progress (this is what drives chart/board data)
   let latestGw = 0;
   for (let gw = 1; gw <= TOTAL_GAMEWEEKS; gw++){
     if (gwStatus[gw-1] === "completed" || gwStatus[gw-1] === "inprogress") latestGw = gw;
+  }
+
+  // latest gameweek the sheet has *attempted* at all (completed, in progress, or erroring) —
+  // lets us tell "season truly hasn't started" apart from "GW1 is stuck on a sheet error"
+  let latestAttemptedGw = 0, latestAttemptedStatus = "notstarted";
+  for (let gw = 1; gw <= TOTAL_GAMEWEEKS; gw++){
+    if (gwStatus[gw-1] !== "notstarted"){ latestAttemptedGw = gw; latestAttemptedStatus = gwStatus[gw-1]; }
   }
 
   const players = playerRows.map((row, idx) => {
@@ -461,22 +476,26 @@ function parseSheet(rows){
     else if (label.includes("season top scorer")) meta.topScorer = value;
   }
 
-  return { players, gwStatus, latestGw, poolLatest, meta };
+  return { players, gwStatus, latestGw, latestAttemptedGw, latestAttemptedStatus, poolLatest, meta };
 }
 
 /* ============================================================
    RENDER: scoreboard header
    ============================================================ */
 function renderHeader(data){
-  const { latestGw, gwStatus, poolLatest, meta } = data;
-  document.getElementById("gwNum").textContent = `${latestGw || 0}/${TOTAL_GAMEWEEKS}`;
+  const { latestGw, latestAttemptedGw, latestAttemptedStatus, gwStatus, poolLatest, meta } = data;
+  const displayGw = latestGw > 0 ? latestGw : latestAttemptedGw;
+  document.getElementById("gwNum").textContent = `${displayGw || 0}/${TOTAL_GAMEWEEKS}`;
 
-  const st = latestGw > 0 ? gwStatus[latestGw-1] : "notstarted";
+  const st = latestGw > 0 ? gwStatus[latestGw-1] : (latestAttemptedGw > 0 ? latestAttemptedStatus : "notstarted");
   const pill = document.getElementById("statusPill");
   pill.className = "pill " + st;
-  document.getElementById("statusText").textContent = latestGw > 0 ? statusLabel(st) : "SEASON NOT STARTED";
+  document.getElementById("statusText").textContent = displayGw > 0 ? statusLabel(st) : "SEASON NOT STARTED";
 
   const tickerParts = [];
+  if (st === "error"){
+    tickerParts.push(`⚠️ GW${displayGw} SCORES UNAVAILABLE — SHEET'S LIVE DATA SOURCE IS ERRORING, CHECK BACK SOON`);
+  }
   if (latestGw > 0) tickerParts.push(`💰 GW${latestGw} PRIZE POOL: ${fmtBaht(poolLatest)}`);
   if (meta.perWeek) tickerParts.push(`ENTRY: ฿${meta.perWeek} / WEEK`);
   if (meta.weeklyWinner) tickerParts.push(`🥇 WEEKLY WINNER: ฿${meta.weeklyWinner}`);
@@ -733,10 +752,17 @@ function leaderOf(players, key, idx){
   return [...players].sort((a,b) => b[key][idx] - a[key][idx])[0];
 }
 
+function emptyBoardMsg(data){
+  if (data.latestAttemptedGw > 0 && data.latestAttemptedStatus === "error"){
+    return `GW${data.latestAttemptedGw} scores unavailable — the sheet's data source is erroring.`;
+  }
+  return "Season hasn't kicked off yet.";
+}
+
 function renderGwPointsSection(data){
   const { players, latestGw } = data;
   if (latestGw === 0){
-    document.getElementById("boardGwPoints").innerHTML = `<div class="row"><span class="nm">Season hasn't kicked off yet.</span></div>`;
+    document.getElementById("boardGwPoints").innerHTML = `<div class="row"><span class="nm">${emptyBoardMsg(data)}</span></div>`;
     return;
   }
   const idx = latestGw - 1;
@@ -822,7 +848,7 @@ function renderGwPointsSection(data){
 function renderTotalPointsSection(data){
   const { players, latestGw } = data;
   if (latestGw === 0){
-    document.getElementById("boardTotalPoints").innerHTML = `<div class="row"><span class="nm">Season hasn't kicked off yet.</span></div>`;
+    document.getElementById("boardTotalPoints").innerHTML = `<div class="row"><span class="nm">${emptyBoardMsg(data)}</span></div>`;
     document.getElementById("chipTotalPoints").innerHTML = `<span>Kick-off pending</span>`;
     return;
   }
@@ -900,7 +926,7 @@ function renderTotalPointsSection(data){
 function renderBalanceSection(data){
   const { players, latestGw } = data;
   if (latestGw === 0){
-    document.getElementById("boardBalance").innerHTML = `<div class="row"><span class="nm">Season hasn't kicked off yet.</span></div>`;
+    document.getElementById("boardBalance").innerHTML = `<div class="row"><span class="nm">${emptyBoardMsg(data)}</span></div>`;
     document.getElementById("chipBalance").innerHTML = `<span>Kick-off pending</span>`;
     return;
   }
