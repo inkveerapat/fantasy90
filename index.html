@@ -3,6 +3,12 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v1.6.0 — Added player highlighting on all 3 charts: hover a row on desktop
+           for a preview, or tap a row on mobile/desktop to pin it. The
+           selected player's line brightens, every other line fades, and a
+           scrollable strip appears below the chart showing their value for
+           every gameweek so far (tap the row again, or the ✕ on the strip,
+           to clear).
   v1.5.0 — Fixed the standalone-app icon not showing: the home-screen icon
            (iOS only reads its own <link rel="apple-touch-icon">, never the
            manifest) and the favicon are now embedded directly in the page as
@@ -234,6 +240,43 @@ main{padding:16px;max-width:760px;margin:0 auto;}
 }
 .gw-note .hint{color:var(--muted);}
 
+.player-strip{
+  overflow:hidden;max-height:0;opacity:0;
+  transition:max-height .25s ease, opacity .2s ease, margin .25s ease;
+}
+.player-strip.open{max-height:120px;opacity:1;margin-top:10px;}
+.strip-head{
+  display:flex;align-items:center;gap:7px;padding:0 2px 6px;
+}
+.strip-head .swatch{width:9px;height:9px;border-radius:50%;flex:none;}
+.strip-head .strip-name{font-weight:700;font-size:12.5px;color:var(--cream);}
+.strip-head .strip-hint{margin-left:auto;font-size:10px;color:var(--muted);}
+.strip-head .strip-clear{
+  background:rgba(255,255,255,.08);border:none;color:var(--muted);
+  border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex:none;
+}
+.strip-scroll{
+  display:flex;gap:7px;overflow-x:auto;padding:2px 2px 6px;
+  scrollbar-width:none;
+}
+.strip-scroll::-webkit-scrollbar{display:none;}
+.strip-scroll .chip{
+  flex:none;display:flex;flex-direction:column;align-items:center;gap:2px;
+  background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.07);
+  border-radius:10px;padding:6px 10px;min-width:52px;
+}
+.chip-gw{font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.3px;}
+.chip-val{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--cream);}
+.chip-val.pos{color:var(--turf);}
+.chip-val.neg{color:var(--danger);}
+
+.row{cursor:pointer;}
+.row.row-active{
+  background:rgba(255,255,255,.09);
+  box-shadow:inset 0 0 0 1px rgba(255,193,69,.35);
+}
+
 footer{
   max-width:760px;margin:10px auto 0;padding:14px 20px 6px;
   text-align:center;color:var(--muted);font-size:10.5px;line-height:1.7;
@@ -299,6 +342,7 @@ footer .rules b{color:var(--gold);}
     <div class="card">
       <div class="chart-wrap"><canvas id="chartGwPoints"></canvas></div>
     </div>
+    <div class="player-strip" id="stripGwPoints"></div>
     <div class="gw-note" id="noteGwPoints"></div>
     <div class="board" id="boardGwPoints"></div>
   </div>
@@ -314,6 +358,7 @@ footer .rules b{color:var(--gold);}
     <div class="card hero">
       <div class="chart-wrap"><canvas id="chartTotalPoints"></canvas></div>
     </div>
+    <div class="player-strip" id="stripTotalPoints"></div>
     <div class="gw-note" id="noteTotalPoints"></div>
     <div class="board" id="boardTotalPoints"></div>
   </div>
@@ -329,6 +374,7 @@ footer .rules b{color:var(--gold);}
     <div class="card">
       <div class="chart-wrap"><canvas id="chartBalance"></canvas></div>
     </div>
+    <div class="player-strip" id="stripBalance"></div>
     <div class="gw-note" id="noteBalance"></div>
     <div class="board" id="boardBalance"></div>
   </div>
@@ -347,7 +393,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "1.5.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "1.6.0"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -715,6 +761,103 @@ function renderGwNote(elId, gw, latestGw, onJump){
 }
 
 /* ============================================================
+   PLAYER HIGHLIGHTING (hover on desktop / tap on mobile)
+   ============================================================ */
+function fadeColor(color, alpha){
+  // handles both "#rrggbb" and "rgba(r,g,b,a)"/"rgb(r,g,b)" base colors
+  if (color.startsWith("#")){
+    const r = parseInt(color.slice(1,3),16), g = parseInt(color.slice(3,5),16), b = parseInt(color.slice(5,7),16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+  const m = color.match(/rgba?\(([^)]+)\)/);
+  if (m){
+    const parts = m[1].split(",").map(s=>s.trim());
+    return `rgba(${parts[0]},${parts[1]},${parts[2]},${alpha})`;
+  }
+  return color;
+}
+
+// Attaches pin/hover state to a chart. getArr(player) returns the per-gameweek
+// array to show in the strip; formatChip(value) returns the HTML for one chip.
+function setupPlayerHighlighting(chart, players, stripElId, boardElId, getArr, formatChip){
+  chart.$pinned = false;
+  chart.$selectedPlayer = null;
+
+  function apply(name){
+    chart.$selectedPlayer = name;
+    chart.data.datasets.forEach(ds => {
+      if (!name){
+        ds.borderColor = ds.$baseColor;
+        ds.borderWidth = ds.$baseWidth;
+        ds.order = ds.$baseOrder;
+      } else if (ds.label === name){
+        ds.borderColor = ds.$baseColor;
+        ds.borderWidth = Math.max(ds.$baseWidth, 3.2);
+        ds.order = 0;
+      } else {
+        ds.borderColor = fadeColor(ds.$baseColor, 0.1);
+        ds.borderWidth = 1;
+        ds.order = 6;
+      }
+    });
+    chart.update("none");
+    renderPlayerStrip(stripElId, name, players, getArr, formatChip, chart.$latestGw, () => {
+      chart.$pinned = false;
+      apply(null);
+    });
+    // keep the board's "active row" highlight in sync without a full re-render
+    // (a full renderBoard() rebuild here would replace the row under the
+    // cursor mid-hover and cause flicker/looping)
+    const boardEl = document.getElementById(boardElId);
+    if (boardEl){
+      boardEl.querySelectorAll(".row").forEach(rowEl => {
+        const nm = rowEl.querySelector(".nm");
+        rowEl.classList.toggle("row-active", !!(nm && name && nm.textContent === name));
+      });
+    }
+  }
+
+  return {
+    preview(name){ if (!chart.$pinned) apply(name); },
+    clearPreview(){ if (!chart.$pinned) apply(null); },
+    toggle(name){
+      if (chart.$pinned && chart.$selectedPlayer === name){ chart.$pinned = false; apply(null); }
+      else { chart.$pinned = true; apply(name); }
+    },
+    clearPinned(){ chart.$pinned = false; apply(null); },
+    isSelected(name){ return chart.$selectedPlayer === name; }
+  };
+}
+
+function renderPlayerStrip(elId, name, players, getArr, formatChip, latestGw, onClear){
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const player = name ? players.find(p => p.name === name) : null;
+  if (!player || !latestGw){
+    el.classList.remove("open");
+    el.innerHTML = "";
+    return;
+  }
+  const arr = getArr(player);
+  let chips = "";
+  for (let gw = 1; gw <= latestGw; gw++){
+    const val = arr[gw-1];
+    if (val === null || val === undefined) continue;
+    chips += `<div class="chip"><span class="chip-gw">GW${gw}</span><span class="chip-val">${formatChip(val)}</span></div>`;
+  }
+  el.innerHTML = `<div class="strip-head">
+      <span class="swatch" style="background:${player.color}"></span>
+      <span class="strip-name">${player.name}</span>
+      <span class="strip-hint">tap row again to clear</span>
+      <button class="strip-clear" id="${elId}-clear">✕</button>
+    </div>
+    <div class="strip-scroll">${chips}</div>`;
+  el.classList.add("open");
+  const clearBtn = document.getElementById(elId+"-clear");
+  if (clearBtn && onClear) clearBtn.addEventListener("click", onClear);
+}
+
+/* ============================================================
    BOARD DATA COMPUTATION (per-gameweek, so history clicks work)
    ============================================================ */
 function computeGwPointsBoard(players, gw){
@@ -775,18 +918,23 @@ function renderGwPointsSection(data){
   const datasets = players.map(p => {
     const info = rankMap[p.name];
     const highlighted = info.bal > 0;
+    const baseColor = highlighted ? p.color : "rgba(255,255,255,0.16)";
+    const baseWidth = highlighted ? 2.4 : 1.3;
+    const baseOrder = highlighted ? 1 : 2;
     return {
       label: p.name,
       data: toXY(p.gwPoints),
-      borderColor: highlighted ? p.color : "rgba(255,255,255,0.16)",
+      borderColor: baseColor,
       backgroundColor: "transparent",
-      borderWidth: highlighted ? 2.4 : 1.3,
-      order: highlighted ? 1 : 2,
+      borderWidth: baseWidth,
+      order: baseOrder,
+      $baseColor: baseColor, $baseWidth: baseWidth, $baseOrder: baseOrder,
     };
   });
 
+  let highlightApi;
   const refresh = (gw) => {
-    renderBoard("boardGwPoints", computeGwPointsBoard(players, gw), true);
+    renderBoard("boardGwPoints", computeGwPointsBoard(players, gw), true, highlightApi);
     renderGwNote("noteGwPoints", gw, latestGw, () => {
       chartGwPointsInst.$selectedGw = latestGw;
       chartGwPointsInst.update("none");
@@ -837,6 +985,7 @@ function renderGwPointsSection(data){
   });
   chartGwPointsInst.$latestGw = latestGw;
   chartGwPointsInst.$selectedGw = latestGw;
+  highlightApi = setupPlayerHighlighting(chartGwPointsInst, players, "stripGwPoints", "boardGwPoints", (p) => p.gwPoints, (v) => `${v}pt`);
 
   refresh(latestGw);
 }
@@ -856,19 +1005,24 @@ function renderTotalPointsSection(data){
 
   const datasets = players.map(p => {
     const isLeader = p.totalPoints[idx] === maxTotal;
+    const baseColor = isLeader ? "#ffc145" : p.color;
+    const baseWidth = isLeader ? 3 : 1.4;
+    const baseOrder = isLeader ? 1 : 2;
     return {
       label: p.name,
       data: toXY(p.totalPoints),
-      borderColor: isLeader ? "#ffc145" : p.color,
+      borderColor: baseColor,
       backgroundColor: "transparent",
-      borderWidth: isLeader ? 3 : 1.4,
-      order: isLeader ? 1 : 2,
+      borderWidth: baseWidth,
+      order: baseOrder,
       $isLeader: isLeader,
+      $baseColor: baseColor, $baseWidth: baseWidth, $baseOrder: baseOrder,
     };
   });
 
+  let highlightApi;
   const refresh = (gw) => {
-    renderBoard("boardTotalPoints", computeTotalPointsBoard(players, gw), false);
+    renderBoard("boardTotalPoints", computeTotalPointsBoard(players, gw), false, highlightApi);
     const leader = leaderOf(players, "totalPoints", gw - 1);
     document.getElementById("chipTotalPoints").innerHTML =
       `<span class="swatch" style="background:${leader.color}"></span><span>👑 ${leader.name} · ${leader.totalPoints[gw-1]}pt</span>`;
@@ -915,6 +1069,7 @@ function renderTotalPointsSection(data){
   });
   chartTotalPointsInst.$latestGw = latestGw;
   chartTotalPointsInst.$selectedGw = latestGw;
+  highlightApi = setupPlayerHighlighting(chartTotalPointsInst, players, "stripTotalPoints", "boardTotalPoints", (p) => p.totalPoints, (v) => `${v}pt`);
 
   refresh(latestGw);
 }
@@ -934,19 +1089,24 @@ function renderBalanceSection(data){
 
   const datasets = players.map(p => {
     const isLeader = p.totalBalance[idx] === maxBal;
+    const baseColor = isLeader ? "#ffc145" : p.color;
+    const baseWidth = isLeader ? 3 : 1.4;
+    const baseOrder = isLeader ? 1 : 2;
     return {
       label: p.name,
       data: toXY(p.totalBalance),
-      borderColor: isLeader ? "#ffc145" : p.color,
+      borderColor: baseColor,
       backgroundColor: "transparent",
-      borderWidth: isLeader ? 3 : 1.4,
-      order: isLeader ? 1 : 2,
+      borderWidth: baseWidth,
+      order: baseOrder,
       $isLeader: isLeader,
+      $baseColor: baseColor, $baseWidth: baseWidth, $baseOrder: baseOrder,
     };
   });
 
+  let highlightApi;
   const refresh = (gw) => {
-    renderBoard("boardBalance", computeBalanceBoard(players, gw), false);
+    renderBoard("boardBalance", computeBalanceBoard(players, gw), false, highlightApi);
     const leader = leaderOf(players, "totalBalance", gw - 1);
     document.getElementById("chipBalance").innerHTML =
       `<span class="swatch" style="background:${leader.color}"></span><span>💰 ${leader.name} · ${fmtBaht(leader.totalBalance[gw-1])}</span>`;
@@ -1010,16 +1170,19 @@ function renderBalanceSection(data){
   });
   chartBalanceInst.$latestGw = latestGw;
   chartBalanceInst.$selectedGw = latestGw;
+  highlightApi = setupPlayerHighlighting(chartBalanceInst, players, "stripBalance", "boardBalance", (p) => p.totalBalance,
+    (v) => `<span class="${v>0?'pos':v<0?'neg':''}">${v>0?"+":""}${fmtBaht(v)}</span>`);
 
   refresh(latestGw);
 }
 
-function renderBoard(elId, items, rankOnlyPositive){
+function renderBoard(elId, items, rankOnlyPositive, highlightApi){
   const el = document.getElementById(elId);
   const showCount = 5;
   function line(x){
     const rankDisplay = rankOnlyPositive ? (x.positive ? medalFor(x.rank) : "–") : medalFor(x.rank);
-    const cls = (rankOnlyPositive ? x.positive : true) ? rowClass(x.rank) : "";
+    const activeCls = (highlightApi && highlightApi.isSelected(x.name)) ? "row-active" : "";
+    const cls = [(rankOnlyPositive ? x.positive : true) ? rowClass(x.rank) : "", activeCls].filter(Boolean).join(" ");
     const valClass = x.positive === null ? "" : (x.positive ? "pos" : "neg");
     return `<div class="row ${cls}">
       <span class="rank">${rankDisplay}</span>
@@ -1040,6 +1203,16 @@ function renderBoard(elId, items, rankOnlyPositive){
       const expanded = restEl.style.display !== "none";
       restEl.style.display = expanded ? "none" : "block";
       moreBtn.textContent = expanded ? `Show all ${items.length} managers ▾` : "Show less ▴";
+    });
+  }
+  if (highlightApi){
+    const rowEls = el.querySelectorAll(".row");
+    items.forEach((x, i) => {
+      const rowEl = rowEls[i];
+      if (!rowEl) return;
+      rowEl.addEventListener("mouseenter", () => highlightApi.preview(x.name));
+      rowEl.addEventListener("mouseleave", () => highlightApi.clearPreview());
+      rowEl.addEventListener("click", () => highlightApi.toggle(x.name));
     });
   }
 }
