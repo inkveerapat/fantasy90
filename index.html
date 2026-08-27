@@ -3,6 +3,10 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v1.7.1 — Moved the info row out of the sticky header. It now scrolls away
+           with the page like normal content instead of staying pinned/
+           overlaying things underneath it as you scroll. Only the title bar
+           and gameweek pill stay stuck to the top.
   v1.7.0 — Removed the scrolling ticker animation (looping CSS animations can
            silently freeze on iOS after the screen locks/unlocks, and don't
            resume without a reload) — same info now shown as a static wrapped
@@ -156,7 +160,7 @@ body{
 .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
 
 .ticker-wrap{
-  margin-top:9px;border-radius:10px;
+  margin:10px 16px 4px;border-radius:10px;
   background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.06);
   padding:8px 12px;
 }
@@ -334,9 +338,9 @@ footer .rules b{color:var(--gold);}
     <span class="num" id="gwNum">–/38</span>
     <span class="pill notstarted" id="statusPill"><span class="dot"></span><span id="statusText">…</span></span>
   </div>
-  <div class="ticker-wrap">
-    <div class="ticker" id="tickerEl"><span>loading…</span></div>
-  </div>
+</div>
+<div class="ticker-wrap">
+  <div class="ticker" id="tickerEl"><span>loading…</span></div>
 </div>
 
 <main id="mainContent" style="display:none;">
@@ -402,7 +406,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "1.7.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "1.7.1"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
