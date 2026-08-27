@@ -1,3 +1,16 @@
+<!--
+  FANTASY 90 — CHANGELOG
+  Bump APP_VERSION (in the CONFIG section of the script block) whenever you
+  ship a change, and add a line here so it's easy to see what shipped when.
+
+  v1.2.0 — Leaderboards are now clickable history: tap any past gameweek on a
+           chart to see the standings as of that week (gold marker line shows
+           what's selected; "Jump to latest" resets it). Gameweek Points list
+           now sorts by GW points (rank badge still keyed to weekly balance).
+  v1.1.0 — Added on-page version number (footer) + this changelog block.
+  v1.0.1 — Fixed Chart.js CDN link (4.4.4 doesn't exist on cdnjs; pinned to 4.4.1).
+  v1.0.0 — Initial build: 3 racetrack charts, scoreboard header, PWA install support.
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -185,6 +198,19 @@ main{padding:16px;max-width:760px;margin:0 auto;}
   text-align:center;font-size:11px;color:var(--muted);padding:6px;cursor:pointer;
   border-top:1px dashed rgba(255,255,255,.08);margin-top:2px;
 }
+.gw-note{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-size:11px;color:var(--muted);padding:8px 2px 4px;
+}
+.gw-note .tag{
+  font-family:var(--mono);font-weight:700;color:var(--gold);letter-spacing:.3px;
+}
+.gw-note .jump{
+  background:rgba(255,193,69,.12);border:1px solid rgba(255,193,69,.35);color:var(--gold);
+  border-radius:999px;padding:4px 10px;font-size:10.5px;font-weight:700;cursor:pointer;
+  display:flex;align-items:center;gap:4px;
+}
+.gw-note .hint{color:var(--muted);}
 
 footer{
   max-width:760px;margin:10px auto 0;padding:14px 20px 6px;
@@ -265,6 +291,7 @@ footer .rules b{color:var(--gold);}
     <div class="card">
       <div class="chart-wrap"><canvas id="chartGwPoints"></canvas></div>
     </div>
+    <div class="gw-note" id="noteGwPoints"></div>
     <div class="board" id="boardGwPoints"></div>
   </div>
 
@@ -279,6 +306,7 @@ footer .rules b{color:var(--gold);}
     <div class="card hero">
       <div class="chart-wrap"><canvas id="chartTotalPoints"></canvas></div>
     </div>
+    <div class="gw-note" id="noteTotalPoints"></div>
     <div class="board" id="boardTotalPoints"></div>
   </div>
 
@@ -293,13 +321,14 @@ footer .rules b{color:var(--gold);}
     <div class="card">
       <div class="chart-wrap"><canvas id="chartBalance"></canvas></div>
     </div>
+    <div class="gw-note" id="noteBalance"></div>
     <div class="board" id="boardBalance"></div>
   </div>
 
   <footer>
     <div class="rules" id="rulesRow"></div>
     <div id="lastUpdated">—</div>
-    <div>Fantasy 90 · a 38-gameweek race</div>
+    <div>Fantasy 90 · a 38-gameweek race · <span id="versionTag">v1.0</span></div>
   </footer>
 
 </main>
@@ -316,6 +345,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
+const APP_VERSION = "1.2.0"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -630,6 +660,79 @@ function medalFor(rank){
   return rank;
 }
 
+function selectedMarkerPlugin(){
+  return {
+    id: "selectedMarker",
+    afterDraw(chart){
+      const gw = chart.$selectedGw, latest = chart.$latestGw;
+      if (!gw || gw === latest) return; // only show when inspecting history, not on the live edge
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea) return;
+      const x = scales.x.getPixelForValue(gw);
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,193,69,0.6)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([2,2]);
+      ctx.beginPath();
+      ctx.moveTo(x, chartArea.top);
+      ctx.lineTo(x, chartArea.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(x, chartArea.top + 4, 3.5, 0, Math.PI*2);
+      ctx.fillStyle = "#ffc145";
+      ctx.fill();
+      ctx.restore();
+    }
+  };
+}
+
+function renderGwNote(elId, gw, latestGw, onJump){
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (gw === latestGw){
+    el.innerHTML = `<span class="hint">Tap the chart to inspect any past gameweek</span>`;
+  } else {
+    el.innerHTML = `<span class="tag">Showing GW ${gw}</span><span class="jump">↺ Jump to latest</span>`;
+    const btn = el.querySelector(".jump");
+    if (btn) btn.addEventListener("click", onJump);
+  }
+}
+
+/* ============================================================
+   BOARD DATA COMPUTATION (per-gameweek, so history clicks work)
+   ============================================================ */
+function computeGwPointsBoard(players, gw){
+  const idx = gw - 1;
+  const raw = players.map(p => ({ name:p.name, color:p.color, gwPts:p.gwPoints[idx], gwBal:p.gwBalance[idx] }));
+  const balSorted = [...raw].sort((a,b) => b.gwBal - a.gwBal);
+  const ranks = competitionRank(balSorted.map(x => x.gwBal));
+  const rankMap = {};
+  balSorted.forEach((x,i) => { rankMap[x.name] = ranks[i]; });
+  // display order: sorted by GW points (per spec), rank badge stays balance-based
+  const sorted = [...raw].sort((a,b) => b.gwPts - a.gwPts);
+  return sorted.map(x => ({
+    rank: rankMap[x.name], name:x.name, color:x.color,
+    val:x.gwBal, valFmt:(x.gwBal>0?"+":"")+fmtBaht(x.gwBal),
+    sub:x.gwPts+"pt", positive:x.gwBal>0
+  }));
+}
+function computeTotalPointsBoard(players, gw){
+  const idx = gw - 1;
+  const list = players.map(p => ({ name:p.name, color:p.color, total:p.totalPoints[idx] }))
+    .sort((a,b) => b.total - a.total);
+  return list.map((x,i) => ({ rank:i+1, name:x.name, color:x.color, val:x.total, valFmt:x.total+" pt", sub:"", positive:null }));
+}
+function computeBalanceBoard(players, gw){
+  const idx = gw - 1;
+  const list = players.map(p => ({ name:p.name, color:p.color, bal:p.totalBalance[idx] }))
+    .sort((a,b) => b.bal - a.bal);
+  return list.map((x,i) => ({ rank:i+1, name:x.name, color:x.color, val:x.bal, valFmt:fmtBaht(x.bal), sub:"", positive:x.bal>=0 }));
+}
+function leaderOf(players, key, idx){
+  return [...players].sort((a,b) => b[key][idx] - a[key][idx])[0];
+}
+
 function renderGwPointsSection(data){
   const { players, latestGw } = data;
   if (latestGw === 0){
@@ -637,22 +740,18 @@ function renderGwPointsSection(data){
     return;
   }
   const idx = latestGw - 1;
-  const list = players.map(p => ({
-    name: p.name, color: p.color,
-    gwPts: p.gwPoints[idx], gwBal: p.gwBalance[idx]
-  })).sort((a,b) => b.gwBal - a.gwBal);
+  const rankMap = {};
+  {
+    const balSorted = [...players].map(p=>({name:p.name,gwBal:p.gwBalance[idx]})).sort((a,b)=>b.gwBal-a.gwBal);
+    const ranks = competitionRank(balSorted.map(x=>x.gwBal));
+    balSorted.forEach((x,i)=>{ rankMap[x.name] = { rank: ranks[i], bal: x.gwBal }; });
+  }
 
-  const sortedBal = list.map(x => x.gwBal);
-  const ranks = competitionRank(sortedBal);
-
-  // chart
   const ctx = document.getElementById("chartGwPoints").getContext("2d");
   if (chartGwPointsInst) chartGwPointsInst.destroy();
-  const rankByName = {};
-  list.forEach((x, i) => { rankByName[x.name] = { rank: ranks[i], bal: x.gwBal }; });
 
   const datasets = players.map(p => {
-    const info = rankByName[p.name];
+    const info = rankMap[p.name];
     const highlighted = info.bal > 0;
     return {
       label: p.name,
@@ -664,10 +763,28 @@ function renderGwPointsSection(data){
     };
   });
 
+  const refresh = (gw) => {
+    renderBoard("boardGwPoints", computeGwPointsBoard(players, gw), true);
+    renderGwNote("noteGwPoints", gw, latestGw, () => {
+      chartGwPointsInst.$selectedGw = latestGw;
+      chartGwPointsInst.update("none");
+      refresh(latestGw);
+    });
+  };
+
   chartGwPointsInst = new Chart(ctx, {
     type: "line",
     data: { datasets },
     options: Object.assign(baseChartOptions("pts", latestGw), {
+      onClick: (evt) => {
+        const xScale = chartGwPointsInst.scales.x;
+        let gw = Math.round(xScale.getValueForPixel(evt.x));
+        gw = Math.max(1, Math.min(latestGw, gw));
+        if (gw === chartGwPointsInst.$selectedGw) return;
+        chartGwPointsInst.$selectedGw = gw;
+        chartGwPointsInst.update("none");
+        refresh(gw);
+      },
       plugins: {
         legend: { display:false },
         tooltip: {
@@ -682,24 +799,24 @@ function renderGwPointsSection(data){
         }
       }
     }),
-    plugins: [endpointLabelsPlugin((ds) => {
-      const info = rankByName[ds.label];
-      if (!info || info.bal <= 0) return { big:false };
-      return {
-        big:true,
-        badge: `#${info.rank}`,
-        badgeBg: info.rank===1?"#ffc145":info.rank===2?"#c9d2da":info.rank===3?"#d98c4a":"rgba(0,0,0,.6)",
-        badgeColor: info.rank<=3? "#1a1200":"#fff"
-      };
-    })]
+    plugins: [
+      endpointLabelsPlugin((ds) => {
+        const info = rankMap[ds.label];
+        if (!info || info.bal <= 0) return { big:false };
+        return {
+          big:true,
+          badge: `#${info.rank}`,
+          badgeBg: info.rank===1?"#ffc145":info.rank===2?"#c9d2da":info.rank===3?"#d98c4a":"rgba(0,0,0,.6)",
+          badgeColor: info.rank<=3? "#1a1200":"#fff"
+        };
+      }),
+      selectedMarkerPlugin()
+    ]
   });
+  chartGwPointsInst.$latestGw = latestGw;
+  chartGwPointsInst.$selectedGw = latestGw;
 
-  // leaderboard list (top 5 + toggle)
-  renderBoard("boardGwPoints", list.map((x,i)=>({
-    rank: ranks[i], name:x.name, color:x.color,
-    val: x.gwBal, valFmt: (x.gwBal>0?"+":"")+fmtBaht(x.gwBal).replace("฿","฿"),
-    sub: x.gwPts+"pt", positive: x.gwBal>0
-  })), true);
+  refresh(latestGw);
 }
 
 function renderTotalPointsSection(data){
@@ -710,9 +827,7 @@ function renderTotalPointsSection(data){
     return;
   }
   const idx = latestGw - 1;
-  const list = players.map(p => ({ name:p.name, color:p.color, total: p.totalPoints[idx] }))
-    .sort((a,b)=>b.total-a.total);
-  const maxTotal = list[0].total;
+  const maxTotal = Math.max(...players.map(p => p.totalPoints[idx]));
 
   const ctx = document.getElementById("chartTotalPoints").getContext("2d");
   if (chartTotalPointsInst) chartTotalPointsInst.destroy();
@@ -729,10 +844,31 @@ function renderTotalPointsSection(data){
     };
   });
 
+  const refresh = (gw) => {
+    renderBoard("boardTotalPoints", computeTotalPointsBoard(players, gw), false);
+    const leader = leaderOf(players, "totalPoints", gw - 1);
+    document.getElementById("chipTotalPoints").innerHTML =
+      `<span class="swatch" style="background:${leader.color}"></span><span>👑 ${leader.name} · ${leader.totalPoints[gw-1]}pt</span>`;
+    renderGwNote("noteTotalPoints", gw, latestGw, () => {
+      chartTotalPointsInst.$selectedGw = latestGw;
+      chartTotalPointsInst.update("none");
+      refresh(latestGw);
+    });
+  };
+
   chartTotalPointsInst = new Chart(ctx, {
     type:"line",
     data:{ datasets },
     options: Object.assign(baseChartOptions("pts", latestGw, {xStep:5}), {
+      onClick: (evt) => {
+        const xScale = chartTotalPointsInst.scales.x;
+        let gw = Math.round(xScale.getValueForPixel(evt.x));
+        gw = Math.max(1, Math.min(latestGw, gw));
+        if (gw === chartTotalPointsInst.$selectedGw) return;
+        chartTotalPointsInst.$selectedGw = gw;
+        chartTotalPointsInst.update("none");
+        refresh(gw);
+      },
       plugins: {
         legend:{display:false},
         tooltip: {
@@ -747,18 +883,18 @@ function renderTotalPointsSection(data){
         }
       }
     }),
-    plugins: [endpointLabelsPlugin((ds)=>{
-      const isLeader = ds.borderColor === "#ffc145";
-      return isLeader ? { big:true, badge:"👑", badgeBg:"#ffc145", badgeColor:"#1a1200" } : { big:false };
-    })]
+    plugins: [
+      endpointLabelsPlugin((ds)=>{
+        const isLeader = ds.borderColor === "#ffc145";
+        return isLeader ? { big:true, badge:"👑", badgeBg:"#ffc145", badgeColor:"#1a1200" } : { big:false };
+      }),
+      selectedMarkerPlugin()
+    ]
   });
+  chartTotalPointsInst.$latestGw = latestGw;
+  chartTotalPointsInst.$selectedGw = latestGw;
 
-  document.getElementById("chipTotalPoints").innerHTML =
-    `<span class="swatch" style="background:${list[0].color}"></span><span>👑 ${list[0].name} · ${list[0].total}pt</span>`;
-
-  renderBoard("boardTotalPoints", list.map((x,i)=>({
-    rank:i+1, name:x.name, color:x.color, val:x.total, valFmt:x.total+" pt", sub:"", positive:null
-  })), false);
+  refresh(latestGw);
 }
 
 function renderBalanceSection(data){
@@ -769,9 +905,7 @@ function renderBalanceSection(data){
     return;
   }
   const idx = latestGw - 1;
-  const list = players.map(p => ({ name:p.name, color:p.color, bal: p.totalBalance[idx] }))
-    .sort((a,b)=>b.bal-a.bal);
-  const maxBal = list[0].bal;
+  const maxBal = Math.max(...players.map(p => p.totalBalance[idx]));
 
   const ctx = document.getElementById("chartBalance").getContext("2d");
   if (chartBalanceInst) chartBalanceInst.destroy();
@@ -788,10 +922,31 @@ function renderBalanceSection(data){
     };
   });
 
+  const refresh = (gw) => {
+    renderBoard("boardBalance", computeBalanceBoard(players, gw), false);
+    const leader = leaderOf(players, "totalBalance", gw - 1);
+    document.getElementById("chipBalance").innerHTML =
+      `<span class="swatch" style="background:${leader.color}"></span><span>💰 ${leader.name} · ${fmtBaht(leader.totalBalance[gw-1])}</span>`;
+    renderGwNote("noteBalance", gw, latestGw, () => {
+      chartBalanceInst.$selectedGw = latestGw;
+      chartBalanceInst.update("none");
+      refresh(latestGw);
+    });
+  };
+
   chartBalanceInst = new Chart(ctx, {
     type:"line",
     data:{ datasets },
     options: Object.assign(baseChartOptions("baht", latestGw, {xStep:5, beginAtZero:false}), {
+      onClick: (evt) => {
+        const xScale = chartBalanceInst.scales.x;
+        let gw = Math.round(xScale.getValueForPixel(evt.x));
+        gw = Math.max(1, Math.min(latestGw, gw));
+        if (gw === chartBalanceInst.$selectedGw) return;
+        chartBalanceInst.$selectedGw = gw;
+        chartBalanceInst.update("none");
+        refresh(gw);
+      },
       plugins: {
         legend:{display:false},
         tooltip: {
@@ -827,17 +982,14 @@ function renderBalanceSection(data){
       endpointLabelsPlugin((ds)=>{
         const isLeader = ds.borderColor === "#ffc145";
         return isLeader ? { big:true, badge:"💰", badgeBg:"#ffc145", badgeColor:"#1a1200" } : { big:false };
-      })
+      }),
+      selectedMarkerPlugin()
     ]
   });
+  chartBalanceInst.$latestGw = latestGw;
+  chartBalanceInst.$selectedGw = latestGw;
 
-  document.getElementById("chipBalance").innerHTML =
-    `<span class="swatch" style="background:${list[0].color}"></span><span>💰 ${list[0].name} · ${fmtBaht(list[0].bal)}</span>`;
-
-  renderBoard("boardBalance", list.map((x,i)=>({
-    rank:i+1, name:x.name, color:x.color, val:x.bal,
-    valFmt: fmtBaht(x.bal), sub:"", positive: x.bal>=0
-  })), false);
+  refresh(latestGw);
 }
 
 function renderBoard(elId, items, rankOnlyPositive){
@@ -885,6 +1037,8 @@ async function boot(isRefresh){
   const loadingScreen = document.getElementById("loadingScreen");
   const refreshBtn = document.getElementById("refreshBtn");
   const errBox = document.getElementById("errBox");
+  const versionTag = document.getElementById("versionTag");
+  if (versionTag) versionTag.textContent = "v" + APP_VERSION;
   errBox.innerHTML = "";
   if (isRefresh) refreshBtn.classList.add("spinning");
   try {
