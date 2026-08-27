@@ -3,6 +3,10 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v1.4.1 — Fixed a leader-badge bug: the crown/money-bag badge was detected by
+           comparing line color to the highlight gold, so any player whose own
+           assigned color happened to be that same gold got a false badge.
+           Now tracked with an explicit flag instead of a color match.
   v1.4.0 — Removed the "Add to home screen" install banner (suspected cause
            of a white-space/scroll issue on some phones). You can still
            manually add it to your home screen via the browser's own share
@@ -335,7 +339,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "1.4.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "1.4.1"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -851,6 +855,7 @@ function renderTotalPointsSection(data){
       backgroundColor: "transparent",
       borderWidth: isLeader ? 3 : 1.4,
       order: isLeader ? 1 : 2,
+      $isLeader: isLeader,
     };
   });
 
@@ -895,8 +900,7 @@ function renderTotalPointsSection(data){
     }),
     plugins: [
       endpointLabelsPlugin((ds)=>{
-        const isLeader = ds.borderColor === "#ffc145";
-        return isLeader ? { big:true, badge:"👑", badgeBg:"#ffc145", badgeColor:"#1a1200" } : { big:false };
+        return ds.$isLeader ? { big:true, badge:"👑", badgeBg:"#ffc145", badgeColor:"#1a1200" } : { big:false };
       }),
       selectedMarkerPlugin()
     ]
@@ -929,6 +933,7 @@ function renderBalanceSection(data){
       backgroundColor: "transparent",
       borderWidth: isLeader ? 3 : 1.4,
       order: isLeader ? 1 : 2,
+      $isLeader: isLeader,
     };
   });
 
@@ -990,8 +995,7 @@ function renderBalanceSection(data){
         }
       },
       endpointLabelsPlugin((ds)=>{
-        const isLeader = ds.borderColor === "#ffc145";
-        return isLeader ? { big:true, badge:"💰", badgeBg:"#ffc145", badgeColor:"#1a1200" } : { big:false };
+        return ds.$isLeader ? { big:true, badge:"💰", badgeBg:"#ffc145", badgeColor:"#1a1200" } : { big:false };
       }),
       selectedMarkerPlugin()
     ]
