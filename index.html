@@ -3,6 +3,16 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v1.7.0 — Removed the scrolling ticker animation (looping CSS animations can
+           silently freeze on iOS after the screen locks/unlocks, and don't
+           resume without a reload) — same info now shown as a static wrapped
+           row instead. Also fixed the real cause of "refresh doesn't update
+           the site": the service worker was caching index.html and only
+           re-checks for updates when its own file's bytes change, so an
+           index.html-only deploy never got picked up. sw.js is now a
+           one-time cleanup script that clears all caches and unregisters
+           itself — pages are fetched fresh from the network from here on,
+           same as a normal site.
   v1.6.0 — Added player highlighting on all 3 charts: hover a row on desktop
            for a preview, or tap a row on mobile/desktop to pin it. The
            selected player's line brightens, every other line fades, and a
@@ -146,21 +156,20 @@ body{
 .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
 
 .ticker-wrap{
-  margin-top:9px;overflow:hidden;border-radius:10px;
+  margin-top:9px;border-radius:10px;
   background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.06);
-  padding:6px 0;
+  padding:8px 12px;
 }
 .ticker{
-  display:inline-flex;white-space:nowrap;
-  animation:ticker 22s linear infinite;
+  display:flex;flex-wrap:wrap;
   font-family:var(--mono);font-size:11.5px;color:var(--gold);
-  letter-spacing:.3px;
+  letter-spacing:.3px;row-gap:4px;
 }
-.ticker span{padding:0 22px;}
-.ticker span.sep{color:var(--muted);}
-@keyframes ticker{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+.ticker span{padding:0 10px 0 0;white-space:nowrap;}
+.ticker span.sep{color:var(--muted);padding:0 10px 0 0;}
+.ticker span.sep:last-child{display:none;}
 @media (prefers-reduced-motion:reduce){
-  .ticker{animation:none;} .pill.inprogress{animation:none;}
+  .pill.inprogress{animation:none;}
 }
 
 /* ---------- layout ---------- */
@@ -393,7 +402,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "1.6.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "1.7.0"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -546,7 +555,7 @@ function renderHeader(data){
   tickerParts.push(`${TOTAL_GAMEWEEKS - latestGw} GAMEWEEKS TO THE FINISH LINE 🏁`);
 
   const joined = tickerParts.map(t => `<span>${t}</span><span class="sep">•</span>`).join("");
-  document.getElementById("tickerEl").innerHTML = joined + joined; // duplicate for seamless loop
+  document.getElementById("tickerEl").innerHTML = joined;
 
   document.getElementById("rulesRow").innerHTML = [
     meta.players ? `<span><b>${meta.players}</b> managers</span>` : "",
@@ -1258,8 +1267,9 @@ document.getElementById("refreshBtn").addEventListener("click", () => boot(true)
 boot(false);
 
 /* ============================================================
-   Service worker (still lets users manually "Add to Home Screen"
-   via their browser's own share menu — we just don't nag about it)
+   Service worker — kept registered only so any phone that already
+   installed the old caching version gets the cleanup (kill-switch)
+   worker delivered and removes its stale cache. See sw.js.
    ============================================================ */
 if ("serviceWorker" in navigator){
   window.addEventListener("load", () => {
