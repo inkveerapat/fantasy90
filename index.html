@@ -3,6 +3,14 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v2.0.0 — Tooltip rows on all 3 charts now always sort highest-to-lowest for
+           whichever gameweek you're pointing at (previously they were in a
+           fixed dataset order that only happened to look sorted for the
+           latest gameweek). Added a light haptic tick as you drag across a
+           chart and cross into a new gameweek — note this only works on
+           Android Chrome; iOS Safari doesn't expose haptics to web pages at
+           all (not even installed PWAs), so iPhones won't feel anything
+           here regardless of how this is built.
   v1.9.1 — Fixed a color mismatch: on the Total Points and Balance charts,
            the leader's line/avatar ring was being swapped to gold, so it no
            longer matched their own color in the leaderboard. Every player's
@@ -435,7 +443,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "1.9.1"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "2.0.0"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -824,6 +832,35 @@ function renderGwNote(elId, gw, latestGw, onJump){
 }
 
 /* ============================================================
+   HAPTICS
+   Note: the Vibration API has no effect on iOS Safari — Apple doesn't
+   expose the Taptic Engine to web content at all (even installed PWAs),
+   so this is a no-op there. It does work on Android Chrome.
+   ============================================================ */
+function hapticTick(){
+  try { if (navigator.vibrate) navigator.vibrate(8); } catch(e){}
+}
+
+// Fires a haptic tick each time the dragged/hovered gameweek index changes —
+// call from a chart's onHover. getChart is a () => chartInstance getter
+// (not the instance itself) since this option is set during Chart
+// construction, before the outer `chartXInst = new Chart(...)` assignment
+// has completed — capturing the instance directly would freeze on undefined.
+function gwHoverHaptics(getChart, latestGw){
+  return (evt) => {
+    const chart = getChart();
+    if (!chart || !evt || evt.x == null) return;
+    const xScale = chart.scales.x;
+    let gw = Math.round(xScale.getValueForPixel(evt.x));
+    gw = Math.max(1, Math.min(latestGw, gw));
+    if (gw !== chart.$hapticGw){
+      chart.$hapticGw = gw;
+      hapticTick();
+    }
+  };
+}
+
+/* ============================================================
    PLAYER HIGHLIGHTING (hover on desktop / tap on mobile)
    ============================================================ */
 function fadeColor(color, alpha){
@@ -1025,6 +1062,7 @@ function renderGwPointsSection(data){
         chartGwPointsInst.update("none");
         refresh(gw);
       },
+      onHover: gwHoverHaptics(() => chartGwPointsInst, latestGw),
       plugins: {
         legend: { display:false },
         tooltip: {
@@ -1032,6 +1070,7 @@ function renderGwPointsSection(data){
           titleColor:"#ffc145", padding:9,
           titleFont:{family:"IBM Plex Mono, monospace", size:11, weight:"700"},
           bodyFont:{family:"IBM Plex Mono, monospace", size:11},
+          itemSort: (a,b) => b.parsed.y - a.parsed.y,
           callbacks: {
             title:(items)=>"GW "+items[0].parsed.x,
             label:(item)=> `${item.dataset.label}: ${item.parsed.y} pts`
@@ -1117,6 +1156,7 @@ function renderTotalPointsSection(data){
         chartTotalPointsInst.update("none");
         refresh(gw);
       },
+      onHover: gwHoverHaptics(() => chartTotalPointsInst, latestGw),
       plugins: {
         legend:{display:false},
         tooltip: {
@@ -1124,6 +1164,7 @@ function renderTotalPointsSection(data){
           titleColor:"#ffc145", padding:9,
           titleFont:{family:"IBM Plex Mono, monospace", size:11, weight:"700"},
           bodyFont:{family:"IBM Plex Mono, monospace", size:11},
+          itemSort: (a,b) => b.parsed.y - a.parsed.y,
           callbacks: {
             title:(items)=>"GW "+items[0].parsed.x,
             label:(item)=> `${item.dataset.label}: ${item.parsed.y} pts`
@@ -1202,6 +1243,7 @@ function renderBalanceSection(data){
         chartBalanceInst.update("none");
         refresh(gw);
       },
+      onHover: gwHoverHaptics(() => chartBalanceInst, latestGw),
       plugins: {
         legend:{display:false},
         tooltip: {
@@ -1209,6 +1251,7 @@ function renderBalanceSection(data){
           titleColor:"#ffc145", padding:9,
           titleFont:{family:"IBM Plex Mono, monospace", size:11, weight:"700"},
           bodyFont:{family:"IBM Plex Mono, monospace", size:11},
+          itemSort: (a,b) => b.parsed.y - a.parsed.y,
           callbacks: {
             title:(items)=>"GW "+items[0].parsed.x,
             label:(item)=> `${item.dataset.label}: ${fmtBaht(item.parsed.y)}`
