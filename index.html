@@ -3,6 +3,14 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v1.9.1 — Fixed a color mismatch: on the Total Points and Balance charts,
+           the leader's line/avatar ring was being swapped to gold, so it no
+           longer matched their own color in the leaderboard. Every player's
+           line, avatar ring, and leaderboard swatch now always use the same
+           personal color everywhere — "leader" is conveyed by a thicker
+           line and the 👑/💰 badge instead of a color swap. Also added a
+           hint that tapping a manager traces their line on the chart
+           (the feature already worked, it just wasn't sign-posted).
   v1.9.0 — Replaced plain color dots with animal mascots (🦊🐷🐺🐢🐻🦓🐯🦅🐶🐙🦁,
            one per manager, paired to their existing line color) everywhere a
            player is identified: leaderboard rows, the player-detail strip,
@@ -427,7 +435,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "1.9.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "1.9.1"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -718,7 +726,7 @@ function endpointLabelsPlugin(getLabel){
         const px = lastPoint.x, py = lastPoint.y;
         const big = !!info.big;
         const haloR = big ? 12 : 8.5;
-        const ringColor = (ds.$baseColor && ds.$baseColor.startsWith("#")) ? ds.$baseColor : "#ffffff";
+        const ringColor = ds.$identityColor || ((ds.$baseColor && ds.$baseColor.startsWith("#")) ? ds.$baseColor : "#ffffff");
 
         ctx.save();
         ctx.globalAlpha = ds.$faded ? 0.22 : 1;
@@ -807,7 +815,7 @@ function renderGwNote(elId, gw, latestGw, onJump){
   const el = document.getElementById(elId);
   if (!el) return;
   if (gw === latestGw){
-    el.innerHTML = `<span class="hint">Tap the chart to inspect any past gameweek</span>`;
+    el.innerHTML = `<span class="hint">Tap the chart for a past gameweek, or a manager below to trace their line</span>`;
   } else {
     el.innerHTML = `<span class="tag">Showing GW ${gw}</span><span class="jump">↺ Jump to latest</span>`;
     const btn = el.querySelector(".jump");
@@ -976,7 +984,10 @@ function renderGwPointsSection(data){
   const datasets = players.map(p => {
     const info = rankMap[p.name];
     const highlighted = info.bal > 0;
-    const baseColor = highlighted ? p.color : "rgba(255,255,255,0.16)";
+    // always tinted with the player's own color (never a shared gray) so the
+    // line — and its endpoint avatar ring — always matches their leaderboard
+    // color; muted weeks just fade that same color instead of flattening it
+    const baseColor = highlighted ? p.color : fadeColor(p.color, 0.35);
     const baseWidth = highlighted ? 2.4 : 1.3;
     const baseOrder = highlighted ? 1 : 2;
     return {
@@ -987,6 +998,7 @@ function renderGwPointsSection(data){
       borderWidth: baseWidth,
       order: baseOrder,
       $baseColor: baseColor, $baseWidth: baseWidth, $baseOrder: baseOrder, $avatar: p.avatar,
+      $identityColor: p.color,
     };
   });
 
@@ -1063,7 +1075,7 @@ function renderTotalPointsSection(data){
 
   const datasets = players.map(p => {
     const isLeader = p.totalPoints[idx] === maxTotal;
-    const baseColor = isLeader ? "#ffc145" : p.color;
+    const baseColor = p.color; // always the player's own color — badge/width convey "leader", not a color swap
     const baseWidth = isLeader ? 3 : 1.4;
     const baseOrder = isLeader ? 1 : 2;
     return {
@@ -1075,6 +1087,7 @@ function renderTotalPointsSection(data){
       order: baseOrder,
       $isLeader: isLeader,
       $baseColor: baseColor, $baseWidth: baseWidth, $baseOrder: baseOrder, $avatar: p.avatar,
+      $identityColor: p.color,
     };
   });
 
@@ -1147,7 +1160,7 @@ function renderBalanceSection(data){
 
   const datasets = players.map(p => {
     const isLeader = p.totalBalance[idx] === maxBal;
-    const baseColor = isLeader ? "#ffc145" : p.color;
+    const baseColor = p.color; // always the player's own color — badge/width convey "leader", not a color swap
     const baseWidth = isLeader ? 3 : 1.4;
     const baseOrder = isLeader ? 1 : 2;
     return {
@@ -1159,6 +1172,7 @@ function renderBalanceSection(data){
       order: baseOrder,
       $isLeader: isLeader,
       $baseColor: baseColor, $baseWidth: baseWidth, $baseOrder: baseOrder, $avatar: p.avatar,
+      $identityColor: p.color,
     };
   });
 
