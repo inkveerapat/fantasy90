@@ -3,6 +3,10 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v1.8.0 — Redesigned the info row as wrapping stat chips (pool, entry,
+           prizes, gameweeks remaining) instead of plain wrapped text — each
+           stat is now a self-contained pill, so nothing depends on emoji
+           width for alignment and everything reads level.
   v1.7.1 — Moved the info row out of the sticky header. It now scrolls away
            with the page like normal content instead of staying pinned/
            overlaying things underneath it as you scroll. Only the title bar
@@ -160,18 +164,23 @@ body{
 .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
 
 .ticker-wrap{
-  margin:10px 16px 4px;border-radius:10px;
-  background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.06);
-  padding:8px 12px;
+  margin:10px 16px 4px;
+  display:flex;flex-wrap:wrap;gap:7px;
 }
-.ticker{
-  display:flex;flex-wrap:wrap;
-  font-family:var(--mono);font-size:11.5px;color:var(--gold);
-  letter-spacing:.3px;row-gap:4px;
+.chip-stat{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:6px 10px;border-radius:999px;
+  font-family:var(--mono);font-size:11.5px;font-weight:600;
+  white-space:nowrap;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+  color:var(--cream);
 }
-.ticker span{padding:0 10px 0 0;white-space:nowrap;}
-.ticker span.sep{color:var(--muted);padding:0 10px 0 0;}
-.ticker span.sep:last-child{display:none;}
+.chip-stat.accent-gold{background:rgba(255,193,69,.12);border-color:rgba(255,193,69,.32);color:var(--gold);}
+.chip-stat.accent-turf{background:rgba(79,227,161,.12);border-color:rgba(79,227,161,.32);color:var(--turf);}
+.chip-stat.accent-danger{
+  background:rgba(255,91,91,.12);border-color:rgba(255,91,91,.35);color:var(--danger);
+  width:100%;white-space:normal;
+}
 @media (prefers-reduced-motion:reduce){
   .pill.inprogress{animation:none;}
 }
@@ -339,9 +348,7 @@ footer .rules b{color:var(--gold);}
     <span class="pill notstarted" id="statusPill"><span class="dot"></span><span id="statusText">…</span></span>
   </div>
 </div>
-<div class="ticker-wrap">
-  <div class="ticker" id="tickerEl"><span>loading…</span></div>
-</div>
+<div class="ticker-wrap" id="tickerEl"><span class="chip-stat">loading…</span></div>
 
 <main id="mainContent" style="display:none;">
 
@@ -406,7 +413,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "1.7.1"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "1.8.0"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -547,19 +554,18 @@ function renderHeader(data){
   pill.className = "pill " + st;
   document.getElementById("statusText").textContent = displayGw > 0 ? statusLabel(st) : "SEASON NOT STARTED";
 
-  const tickerParts = [];
+  const chips = [];
   if (st === "error"){
-    tickerParts.push(`⚠️ GW${displayGw} SCORES UNAVAILABLE — SHEET'S LIVE DATA SOURCE IS ERRORING, CHECK BACK SOON`);
+    chips.push(`<span class="chip-stat accent-danger">⚠️ GW${displayGw} scores unavailable — sheet's live data source is erroring, check back soon</span>`);
   }
-  if (latestGw > 0) tickerParts.push(`💰 GW${latestGw} PRIZE POOL: ${fmtBaht(poolLatest)}`);
-  if (meta.perWeek) tickerParts.push(`ENTRY: ฿${meta.perWeek} / WEEK`);
-  if (meta.weeklyWinner) tickerParts.push(`🥇 WEEKLY WINNER: ฿${meta.weeklyWinner}`);
-  if (meta.secondWinner) tickerParts.push(`🥈 RUNNER-UP: ฿${meta.secondWinner}`);
-  if (meta.topScorer) tickerParts.push(`⭐ SEASON TOP SCORER: ฿${meta.topScorer}`);
-  tickerParts.push(`${TOTAL_GAMEWEEKS - latestGw} GAMEWEEKS TO THE FINISH LINE 🏁`);
+  if (latestGw > 0) chips.push(`<span class="chip-stat accent-gold">💰 GW${latestGw} pool ${fmtBaht(poolLatest)}</span>`);
+  if (meta.perWeek) chips.push(`<span class="chip-stat">🎫 Entry ฿${meta.perWeek}/wk</span>`);
+  if (meta.weeklyWinner) chips.push(`<span class="chip-stat">🥇 Winner ฿${meta.weeklyWinner}</span>`);
+  if (meta.secondWinner) chips.push(`<span class="chip-stat">🥈 Runner-up ฿${meta.secondWinner}</span>`);
+  if (meta.topScorer) chips.push(`<span class="chip-stat">⭐ Top scorer ฿${meta.topScorer}</span>`);
+  chips.push(`<span class="chip-stat accent-turf">🏁 ${TOTAL_GAMEWEEKS - latestGw} gameweeks to go</span>`);
 
-  const joined = tickerParts.map(t => `<span>${t}</span><span class="sep">•</span>`).join("");
-  document.getElementById("tickerEl").innerHTML = joined;
+  document.getElementById("tickerEl").innerHTML = chips.join("");
 
   document.getElementById("rulesRow").innerHTML = [
     meta.players ? `<span><b>${meta.players}</b> managers</span>` : "",
