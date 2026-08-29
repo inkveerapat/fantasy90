@@ -3,6 +3,12 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v2.1.1 — The previous fix only updated the endpoint ring; the Gameweek
+           Points chart's actual line color/width (and its tooltip color
+           swatch) was still baked to the latest gameweek's winners at chart
+           creation and never revisited. Both now recompute together for
+           whichever gameweek you're inspecting, so a past GW's tooltip
+           shows that week's winners highlighted, not the current week's.
   v2.1.0 — Fixed the endpoint ring/badge on all 3 charts always reflecting
            the latest gameweek's leader, even while inspecting a past
            gameweek below. It now recomputes for whichever week you've
@@ -453,7 +459,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "2.1.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "2.1.1"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -938,6 +944,11 @@ function setupPlayerHighlighting(chart, players, stripElId, boardElId, getArr, f
       else { chart.$pinned = true; apply(name); }
     },
     clearPinned(){ chart.$pinned = false; apply(null); },
+    // re-runs the current selection (or "no selection") against whatever
+    // $baseColor/$baseWidth/$baseOrder each dataset holds *right now* — call
+    // this after updating those for a newly-inspected gameweek, so the pin/
+    // fade state stays correct instead of visually reverting to stale colors
+    reapply(){ apply(chart.$selectedPlayer); },
     isSelected(name){ return chart.$selectedPlayer === name; }
   };
 }
@@ -1056,6 +1067,18 @@ function renderGwPointsSection(data){
   let highlightApi;
   const refresh = (gw) => {
     rankMap = computeGwRankMap(players, gw);
+    // the line color/width itself ("highlighted this week" vs muted) is also
+    // baked per-dataset — recompute $base* for the inspected gw, then
+    // reapply so pin/fade state stays correct against the new base colors
+    chartGwPointsInst.data.datasets.forEach(ds => {
+      const p = players.find(pl => pl.name === ds.label);
+      const info = rankMap[p.name];
+      const highlighted = info.bal > 0;
+      ds.$baseColor = highlighted ? p.color : fadeColor(p.color, 0.35);
+      ds.$baseWidth = highlighted ? 2.4 : 1.3;
+      ds.$baseOrder = highlighted ? 1 : 2;
+    });
+    if (highlightApi) highlightApi.reapply();
     renderBoard("boardGwPoints", computeGwPointsBoard(players, gw), true, highlightApi);
     renderGwNote("noteGwPoints", gw, latestGw, () => {
       chartGwPointsInst.$selectedGw = latestGw;
