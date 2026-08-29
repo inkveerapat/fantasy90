@@ -3,6 +3,11 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v2.1.0 — Fixed the endpoint ring/badge on all 3 charts always reflecting
+           the latest gameweek's leader, even while inspecting a past
+           gameweek below. It now recomputes for whichever week you've
+           tapped into, matching the leaderboard rows underneath (ties are
+           still handled — every player tied for the lead gets the badge).
   v2.0.1 — Fixed inconsistent-looking bold/weight in chart tooltips: canvas
            text doesn't wait for @font-face to finish loading, so a chart
            drawn too early could silently fall back to the system font for
@@ -448,7 +453,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "2.0.1"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "2.1.0"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -1006,6 +1011,15 @@ function emptyBoardMsg(data){
   return "Season hasn't kicked off yet.";
 }
 
+function computeGwRankMap(players, gw){
+  const idx = gw - 1;
+  const rankMap = {};
+  const balSorted = [...players].map(p=>({name:p.name,gwBal:p.gwBalance[idx]})).sort((a,b)=>b.gwBal-a.gwBal);
+  const ranks = competitionRank(balSorted.map(x=>x.gwBal));
+  balSorted.forEach((x,i)=>{ rankMap[x.name] = { rank: ranks[i], bal: x.gwBal }; });
+  return rankMap;
+}
+
 function renderGwPointsSection(data){
   const { players, latestGw } = data;
   if (latestGw === 0){
@@ -1013,12 +1027,7 @@ function renderGwPointsSection(data){
     return;
   }
   const idx = latestGw - 1;
-  const rankMap = {};
-  {
-    const balSorted = [...players].map(p=>({name:p.name,gwBal:p.gwBalance[idx]})).sort((a,b)=>b.gwBal-a.gwBal);
-    const ranks = competitionRank(balSorted.map(x=>x.gwBal));
-    balSorted.forEach((x,i)=>{ rankMap[x.name] = { rank: ranks[i], bal: x.gwBal }; });
-  }
+  let rankMap = computeGwRankMap(players, latestGw); // reassigned on every refresh() so the endpoint badge always matches the gameweek being inspected, not just the latest one
 
   const ctx = document.getElementById("chartGwPoints").getContext("2d");
   if (chartGwPointsInst) chartGwPointsInst.destroy();
@@ -1046,12 +1055,14 @@ function renderGwPointsSection(data){
 
   let highlightApi;
   const refresh = (gw) => {
+    rankMap = computeGwRankMap(players, gw);
     renderBoard("boardGwPoints", computeGwPointsBoard(players, gw), true, highlightApi);
     renderGwNote("noteGwPoints", gw, latestGw, () => {
       chartGwPointsInst.$selectedGw = latestGw;
       chartGwPointsInst.update("none");
       refresh(latestGw);
     });
+    chartGwPointsInst.update("none");
   };
 
   chartGwPointsInst = new Chart(ctx, {
@@ -1137,15 +1148,22 @@ function renderTotalPointsSection(data){
 
   let highlightApi;
   const refresh = (gw) => {
+    const gwIdx = gw - 1;
+    const maxAtGw = Math.max(...players.map(p => p.totalPoints[gwIdx]));
+    chartTotalPointsInst.data.datasets.forEach(ds => {
+      const p = players.find(pl => pl.name === ds.label);
+      ds.$isLeader = p.totalPoints[gwIdx] === maxAtGw;
+    });
     renderBoard("boardTotalPoints", computeTotalPointsBoard(players, gw), false, highlightApi);
-    const leader = leaderOf(players, "totalPoints", gw - 1);
+    const leader = leaderOf(players, "totalPoints", gwIdx);
     document.getElementById("chipTotalPoints").innerHTML =
-      `<span class="avatar-badge" style="--ring:${leader.color}">${leader.avatar}</span><span>👑 ${leader.name} · ${leader.totalPoints[gw-1]}pt</span>`;
+      `<span class="avatar-badge" style="--ring:${leader.color}">${leader.avatar}</span><span>👑 ${leader.name} · ${leader.totalPoints[gwIdx]}pt</span>`;
     renderGwNote("noteTotalPoints", gw, latestGw, () => {
       chartTotalPointsInst.$selectedGw = latestGw;
       chartTotalPointsInst.update("none");
       refresh(latestGw);
     });
+    chartTotalPointsInst.update("none");
   };
 
   chartTotalPointsInst = new Chart(ctx, {
@@ -1224,15 +1242,22 @@ function renderBalanceSection(data){
 
   let highlightApi;
   const refresh = (gw) => {
+    const gwIdx = gw - 1;
+    const maxAtGw = Math.max(...players.map(p => p.totalBalance[gwIdx]));
+    chartBalanceInst.data.datasets.forEach(ds => {
+      const p = players.find(pl => pl.name === ds.label);
+      ds.$isLeader = p.totalBalance[gwIdx] === maxAtGw;
+    });
     renderBoard("boardBalance", computeBalanceBoard(players, gw), false, highlightApi);
-    const leader = leaderOf(players, "totalBalance", gw - 1);
+    const leader = leaderOf(players, "totalBalance", gwIdx);
     document.getElementById("chipBalance").innerHTML =
-      `<span class="avatar-badge" style="--ring:${leader.color}">${leader.avatar}</span><span>💰 ${leader.name} · ${fmtBaht(leader.totalBalance[gw-1])}</span>`;
+      `<span class="avatar-badge" style="--ring:${leader.color}">${leader.avatar}</span><span>💰 ${leader.name} · ${fmtBaht(leader.totalBalance[gwIdx])}</span>`;
     renderGwNote("noteBalance", gw, latestGw, () => {
       chartBalanceInst.$selectedGw = latestGw;
       chartBalanceInst.update("none");
       refresh(latestGw);
     });
+    chartBalanceInst.update("none");
   };
 
   chartBalanceInst = new Chart(ctx, {
