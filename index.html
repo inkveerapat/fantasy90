@@ -3,6 +3,12 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v2.3.0 — Fixed the pinned player getting visually overshadowed by the rank
+           leader's marker on all 3 charts. The big glowing ring is now
+           purely "whoever you tapped" — if someone's pinned, only their
+           marker gets big, full stop, regardless of rank. The small rank/
+           crown/money badge is unchanged, so you can still see who's #1 at
+           a glance even while a different player is spotlighted.
   v2.2.0 — Simplified the Gameweek Points chart to match the other two:
            every line is now always the player's own color at a uniform
            width, full stop — no more "highlighted this week" vs "muted"
@@ -466,7 +472,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "2.2.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "2.3.0"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -755,7 +761,12 @@ function endpointLabelsPlugin(getLabel){
         if (!lastPoint) return;
         const info = getLabel(ds, i) || {};
         const px = lastPoint.x, py = lastPoint.y;
-        const big = !!info.big;
+        // Ring size is about "what you tapped," not "who's winning": if a
+        // player is pinned/hovered, only their marker gets big — otherwise
+        // fall back to the rank leader. The small rank/crown badge below is
+        // unaffected either way, so you can still see who's #1 at a glance.
+        const hasSelection = !!chart.$selectedPlayer;
+        const big = hasSelection ? (chart.$selectedPlayer === ds.label) : !!info.big;
         const haloR = big ? 12 : 8.5;
         const ringColor = ds.$identityColor || ((ds.$baseColor && ds.$baseColor.startsWith("#")) ? ds.$baseColor : "#ffffff");
 
