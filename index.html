@@ -3,6 +3,11 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v2.4.0 — Removed hover-to-preview on player rows (desktop mouse movement
+           was constantly re-triggering it while just moving across the
+           list). Tap/click is now the only way to select a player on every
+           platform, matching mobile — tap to select, tap again (or the
+           strip's ✕) to clear.
   v2.3.0 — Fixed the pinned player getting visually overshadowed by the rank
            leader's marker on all 3 charts. The big glowing ring is now
            purely "whoever you tapped" — if someone's pinned, only their
@@ -472,7 +477,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "2.3.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "2.4.0"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -914,7 +919,6 @@ function fadeColor(color, alpha){
 // Attaches pin/hover state to a chart. getArr(player) returns the per-gameweek
 // array to show in the strip; formatChip(value) returns the HTML for one chip.
 function setupPlayerHighlighting(chart, players, stripElId, boardElId, getArr, formatChip){
-  chart.$pinned = false;
   chart.$selectedPlayer = null;
 
   function apply(name){
@@ -938,13 +942,9 @@ function setupPlayerHighlighting(chart, players, stripElId, boardElId, getArr, f
       }
     });
     chart.update("none");
-    renderPlayerStrip(stripElId, name, players, getArr, formatChip, chart.$latestGw, () => {
-      chart.$pinned = false;
-      apply(null);
-    });
+    renderPlayerStrip(stripElId, name, players, getArr, formatChip, chart.$latestGw, () => apply(null));
     // keep the board's "active row" highlight in sync without a full re-render
-    // (a full renderBoard() rebuild here would replace the row under the
-    // cursor mid-hover and cause flicker/looping)
+    // (a full renderBoard() rebuild here would replace the row mid-interaction)
     const boardEl = document.getElementById(boardElId);
     if (boardEl){
       boardEl.querySelectorAll(".row").forEach(rowEl => {
@@ -955,17 +955,13 @@ function setupPlayerHighlighting(chart, players, stripElId, boardElId, getArr, f
   }
 
   return {
-    preview(name){ if (!chart.$pinned) apply(name); },
-    clearPreview(){ if (!chart.$pinned) apply(null); },
-    toggle(name){
-      if (chart.$pinned && chart.$selectedPlayer === name){ chart.$pinned = false; apply(null); }
-      else { chart.$pinned = true; apply(name); }
-    },
-    clearPinned(){ chart.$pinned = false; apply(null); },
+    toggle(name){ apply(chart.$selectedPlayer === name ? null : name); },
+    clearPinned(){ apply(null); },
     // re-runs the current selection (or "no selection") against whatever
     // $baseColor/$baseWidth/$baseOrder each dataset holds *right now* — call
-    // this after updating those for a newly-inspected gameweek, so the pin/
-    // fade state stays correct instead of visually reverting to stale colors
+    // this after updating those for a newly-inspected gameweek, so the
+    // selection/fade state stays correct instead of visually reverting to
+    // stale colors
     reapply(){ apply(chart.$selectedPlayer); },
     isSelected(name){ return chart.$selectedPlayer === name; }
   };
@@ -1383,8 +1379,6 @@ function renderBoard(elId, items, rankOnlyPositive, highlightApi){
     items.forEach((x, i) => {
       const rowEl = rowEls[i];
       if (!rowEl) return;
-      rowEl.addEventListener("mouseenter", () => highlightApi.preview(x.name));
-      rowEl.addEventListener("mouseleave", () => highlightApi.clearPreview());
       rowEl.addEventListener("click", () => highlightApi.toggle(x.name));
     });
   }
