@@ -3,6 +3,12 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v2.4.1 — Fixed the Total Points and Balance section titles wrapping one
+           word per line. The leader chip next to each title ("🏆 Name ·
+           Npt") refused to shrink, so on longer names it squeezed the
+           title into an unreadably narrow column instead. The title now
+           keeps a sensible minimum width, and the chip drops to its own
+           line below when there isn't room for both side by side.
   v2.4.0 — Removed hover-to-preview on player rows (desktop mouse movement
            was constantly re-triggering it while just moving across the
            list). Tap/click is now the only way to select a player on every
@@ -246,7 +252,8 @@ body{
 /* ---------- layout ---------- */
 main{padding:16px;max-width:760px;margin:0 auto;}
 .section{margin-bottom:26px;}
-.sec-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px;gap:8px;}
+.sec-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;margin-bottom:8px;gap:6px 8px;}
+.sec-head > div:first-child{flex:1 1 200px;min-width:0;}
 .sec-head h2{
   font-family:'Teko',sans-serif;font-weight:600;font-size:24px;letter-spacing:.3px;
   margin:0;display:flex;align-items:center;gap:8px;color:var(--cream);
@@ -254,7 +261,7 @@ main{padding:16px;max-width:760px;margin:0 auto;}
 .sec-head .emoji{font-size:20px;}
 .sec-sub{font-size:11px;color:var(--muted);margin-top:2px;}
 .leader-chip{
-  display:flex;align-items:center;gap:6px;
+  display:flex;align-items:center;gap:6px;flex:0 0 auto;
   background:rgba(255,193,69,.1);border:1px solid rgba(255,193,69,.3);
   border-radius:999px;padding:5px 10px 5px 6px;
   font-size:11.5px;font-weight:700;color:var(--gold);white-space:nowrap;
@@ -477,7 +484,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "2.4.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "2.4.1"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
