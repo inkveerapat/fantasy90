@@ -3,6 +3,10 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v2.5.1 — Fixed "Jump to latest" leaving the old gameweek's tooltip visibly
+           stuck on screen — it moved the board and marker back but never
+           told the chart to actually clear the floating tooltip. Now does,
+           on all 3 charts.
   v2.5.0 — Charts on touch devices now tell scrolling and scrubbing apart:
            a vertical swipe passes through as a normal page scroll (and
            suppresses the tooltip for that gesture, so it doesn't hang
@@ -493,7 +497,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "2.5.0"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "2.5.1"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -896,6 +900,16 @@ function hapticTick(){
   try { if (navigator.vibrate) navigator.vibrate(8); } catch(e){}
 }
 
+// Clears any floating tooltip left over from scrubbing/tapping a past
+// gameweek — without this, "Jump to latest" moved the board and marker
+// back but left the old gameweek's tooltip visibly stuck on screen.
+function clearTooltip(chart){
+  try {
+    chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+    chart.update("none");
+  } catch(e){}
+}
+
 // Fires a haptic tick each time the dragged/hovered gameweek index changes —
 // call from a chart's onHover. getChart is a () => chartInstance getter
 // (not the instance itself) since this option is set during Chart
@@ -1169,7 +1183,7 @@ function renderGwPointsSection(data){
     renderBoard("boardGwPoints", computeGwPointsBoard(players, gw), true, highlightApi);
     renderGwNote("noteGwPoints", gw, latestGw, () => {
       chartGwPointsInst.$selectedGw = latestGw;
-      chartGwPointsInst.update("none");
+      clearTooltip(chartGwPointsInst);
       refresh(latestGw);
     });
     chartGwPointsInst.update("none");
@@ -1273,7 +1287,7 @@ function renderTotalPointsSection(data){
       `<span class="avatar-badge" style="--ring:${leader.color}">${leader.avatar}</span><span>👑 ${leader.name} · ${leader.totalPoints[gwIdx]}pt</span>`;
     renderGwNote("noteTotalPoints", gw, latestGw, () => {
       chartTotalPointsInst.$selectedGw = latestGw;
-      chartTotalPointsInst.update("none");
+      clearTooltip(chartTotalPointsInst);
       refresh(latestGw);
     });
     chartTotalPointsInst.update("none");
@@ -1370,7 +1384,7 @@ function renderBalanceSection(data){
       `<span class="avatar-badge" style="--ring:${leader.color}">${leader.avatar}</span><span>💰 ${leader.name} · ${fmtBaht(leader.totalBalance[gwIdx])}</span>`;
     renderGwNote("noteBalance", gw, latestGw, () => {
       chartBalanceInst.$selectedGw = latestGw;
-      chartBalanceInst.update("none");
+      clearTooltip(chartBalanceInst);
       refresh(latestGw);
     });
     chartBalanceInst.update("none");
