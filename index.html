@@ -3,6 +3,15 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v2.5.0 — Charts on touch devices now tell scrolling and scrubbing apart:
+           a vertical swipe passes through as a normal page scroll (and
+           suppresses the tooltip for that gesture, so it doesn't hang
+           around while you're just scrolling past), while a horizontal
+           drag blocks page scroll, tracks the tooltip live as you slide,
+           and commits whichever gameweek it's showing the moment you lift
+           your finger — much easier than aiming a single tap at one of 38
+           narrow columns. A clean tap with no real movement still works
+           exactly as before. Applies to all 3 charts.
   v2.4.1 — Fixed the Total Points and Balance section titles wrapping one
            word per line. The leader chip next to each title ("🏆 Name ·
            Npt") refused to shrink, so on longer names it squeezed the
@@ -484,7 +493,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "2.4.1"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "2.5.0"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -896,6 +905,7 @@ function gwHoverHaptics(getChart, latestGw){
   return (evt) => {
     const chart = getChart();
     if (!chart || !evt || evt.x == null) return;
+    if (chart.$scrubDirection === "vertical") return; // this touch is just scrolling the page, not scrubbing
     const xScale = chart.scales.x;
     let gw = Math.round(xScale.getValueForPixel(evt.x));
     gw = Math.max(1, Math.min(latestGw, gw));
@@ -904,6 +914,75 @@ function gwHoverHaptics(getChart, latestGw){
       hapticTick();
     }
   };
+}
+
+// Lets a touch gesture over the chart be EITHER a page scroll or a
+// gameweek scrub, decided by its first few pixels of movement — instead of
+// every touchmove being treated as chart interaction (which is what made a
+// vertical swipe-to-scroll also drag the tooltip along for the ride).
+//
+//   - Mostly vertical  → treated as a normal page scroll. We don't touch it
+//     at all, and we disable the tooltip for the rest of this gesture so it
+//     doesn't hang around while you're just scrolling past the chart.
+//   - Mostly horizontal → treated as a deliberate scrub. Page scroll is
+//     blocked for this gesture, the tooltip tracks your finger live (via
+//     Chart.js's own hover handling — untouched here), and whichever
+//     gameweek it's showing when you lift your finger gets committed.
+//   - No real movement (a clean tap) → commits immediately on release,
+//     same as it always has.
+function attachScrubInteraction(chart, latestGw, commit){
+  const canvas = chart.canvas;
+  const THRESHOLD = 6; // px of movement before we commit to a direction
+  let startX = 0, startY = 0;
+
+  function gwFromClientX(clientX){
+    const rect = canvas.getBoundingClientRect();
+    const xScale = chart.scales.x;
+    let gw = Math.round(xScale.getValueForPixel(clientX - rect.left));
+    return Math.max(1, Math.min(latestGw, gw));
+  }
+
+  canvas.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    startX = t.clientX; startY = t.clientY;
+    chart.$scrubDirection = null;
+    chart.$hapticGw = gwFromClientX(t.clientX); // ready even if this ends up a zero-movement tap
+  }, { passive: true });
+
+  canvas.addEventListener("touchmove", (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startX, dy = t.clientY - startY;
+
+    if (chart.$scrubDirection == null){
+      if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return; // too soon to tell
+      chart.$scrubDirection = Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical";
+      if (chart.$scrubDirection === "vertical"){
+        chart.options.plugins.tooltip.enabled = false;
+        chart.update("none");
+      }
+    }
+
+    if (chart.$scrubDirection === "horizontal"){
+      e.preventDefault();
+      chart.$hapticGw = gwFromClientX(t.clientX);
+    }
+    // vertical: leave it alone — native scroll handles it, nothing to draw
+  }, { passive: false });
+
+  canvas.addEventListener("touchend", (e) => {
+    if (chart.$scrubDirection === "vertical"){
+      chart.options.plugins.tooltip.enabled = true;
+      chart.update("none");
+    } else {
+      // either a clean tap (direction never resolved) or a horizontal scrub
+      // — both commit whichever gameweek was last tracked
+      e.preventDefault(); // stop the browser's synthetic click from re-firing this
+      commit(chart.$hapticGw);
+    }
+    chart.$scrubDirection = null;
+  }, { passive: false });
 }
 
 /* ============================================================
@@ -1095,6 +1174,13 @@ function renderGwPointsSection(data){
     });
     chartGwPointsInst.update("none");
   };
+  const commitGwPoints = (gw) => {
+    gw = Math.max(1, Math.min(latestGw, gw));
+    if (gw === chartGwPointsInst.$selectedGw) return;
+    chartGwPointsInst.$selectedGw = gw;
+    chartGwPointsInst.update("none");
+    refresh(gw);
+  };
 
   chartGwPointsInst = new Chart(ctx, {
     type: "line",
@@ -1102,12 +1188,7 @@ function renderGwPointsSection(data){
     options: Object.assign(baseChartOptions("pts", latestGw), {
       onClick: (evt) => {
         const xScale = chartGwPointsInst.scales.x;
-        let gw = Math.round(xScale.getValueForPixel(evt.x));
-        gw = Math.max(1, Math.min(latestGw, gw));
-        if (gw === chartGwPointsInst.$selectedGw) return;
-        chartGwPointsInst.$selectedGw = gw;
-        chartGwPointsInst.update("none");
-        refresh(gw);
+        commitGwPoints(Math.round(xScale.getValueForPixel(evt.x)));
       },
       onHover: gwHoverHaptics(() => chartGwPointsInst, latestGw),
       plugins: {
@@ -1142,6 +1223,7 @@ function renderGwPointsSection(data){
   chartGwPointsInst.$latestGw = latestGw;
   chartGwPointsInst.$selectedGw = latestGw;
   highlightApi = setupPlayerHighlighting(chartGwPointsInst, players, "stripGwPoints", "boardGwPoints", (p) => p.gwPoints, (v) => `${v}pt`);
+  attachScrubInteraction(chartGwPointsInst, latestGw, commitGwPoints);
 
   refresh(latestGw);
 }
@@ -1196,6 +1278,13 @@ function renderTotalPointsSection(data){
     });
     chartTotalPointsInst.update("none");
   };
+  const commitTotalPoints = (gw) => {
+    gw = Math.max(1, Math.min(latestGw, gw));
+    if (gw === chartTotalPointsInst.$selectedGw) return;
+    chartTotalPointsInst.$selectedGw = gw;
+    chartTotalPointsInst.update("none");
+    refresh(gw);
+  };
 
   chartTotalPointsInst = new Chart(ctx, {
     type:"line",
@@ -1203,12 +1292,7 @@ function renderTotalPointsSection(data){
     options: Object.assign(baseChartOptions("pts", latestGw, {xStep:5}), {
       onClick: (evt) => {
         const xScale = chartTotalPointsInst.scales.x;
-        let gw = Math.round(xScale.getValueForPixel(evt.x));
-        gw = Math.max(1, Math.min(latestGw, gw));
-        if (gw === chartTotalPointsInst.$selectedGw) return;
-        chartTotalPointsInst.$selectedGw = gw;
-        chartTotalPointsInst.update("none");
-        refresh(gw);
+        commitTotalPoints(Math.round(xScale.getValueForPixel(evt.x)));
       },
       onHover: gwHoverHaptics(() => chartTotalPointsInst, latestGw),
       plugins: {
@@ -1236,6 +1320,7 @@ function renderTotalPointsSection(data){
   chartTotalPointsInst.$latestGw = latestGw;
   chartTotalPointsInst.$selectedGw = latestGw;
   highlightApi = setupPlayerHighlighting(chartTotalPointsInst, players, "stripTotalPoints", "boardTotalPoints", (p) => p.totalPoints, (v) => `${v}pt`);
+  attachScrubInteraction(chartTotalPointsInst, latestGw, commitTotalPoints);
 
   refresh(latestGw);
 }
@@ -1290,6 +1375,13 @@ function renderBalanceSection(data){
     });
     chartBalanceInst.update("none");
   };
+  const commitBalance = (gw) => {
+    gw = Math.max(1, Math.min(latestGw, gw));
+    if (gw === chartBalanceInst.$selectedGw) return;
+    chartBalanceInst.$selectedGw = gw;
+    chartBalanceInst.update("none");
+    refresh(gw);
+  };
 
   chartBalanceInst = new Chart(ctx, {
     type:"line",
@@ -1297,12 +1389,7 @@ function renderBalanceSection(data){
     options: Object.assign(baseChartOptions("baht", latestGw, {xStep:5, beginAtZero:false}), {
       onClick: (evt) => {
         const xScale = chartBalanceInst.scales.x;
-        let gw = Math.round(xScale.getValueForPixel(evt.x));
-        gw = Math.max(1, Math.min(latestGw, gw));
-        if (gw === chartBalanceInst.$selectedGw) return;
-        chartBalanceInst.$selectedGw = gw;
-        chartBalanceInst.update("none");
-        refresh(gw);
+        commitBalance(Math.round(xScale.getValueForPixel(evt.x)));
       },
       onHover: gwHoverHaptics(() => chartBalanceInst, latestGw),
       plugins: {
@@ -1348,6 +1435,7 @@ function renderBalanceSection(data){
   chartBalanceInst.$selectedGw = latestGw;
   highlightApi = setupPlayerHighlighting(chartBalanceInst, players, "stripBalance", "boardBalance", (p) => p.totalBalance,
     (v) => `<span class="${v>0?'pos':v<0?'neg':''}">${v>0?"+":""}${fmtBaht(v)}</span>`);
+  attachScrubInteraction(chartBalanceInst, latestGw, commitBalance);
 
   refresh(latestGw);
 }
