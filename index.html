@@ -3,6 +3,14 @@
   Bump APP_VERSION (in the CONFIG section of the script block) whenever you
   ship a change, and add a line here so it's easy to see what shipped when.
 
+  v2.5.2 — Fixed scrubbing feeling stiff/needing a hard swipe to track: the
+           canvas now declares `touch-action: pan-y` so the browser decides
+           "is this a scroll?" instantly and correctly from the first pixel,
+           instead of our JS threshold deciding a few pixels late — by which
+           point iOS had sometimes already locked the gesture in as a native
+           scroll and stopped listening to our preventDefault(). Also
+           removed a redundant double chart.update() in the tooltip-clear
+           helper added for "Jump to latest" last version.
   v2.5.1 — Fixed "Jump to latest" leaving the old gameweek's tooltip visibly
            stuck on screen — it moved the board and marker back but never
            told the chart to actually clear the floating tooltip. Now does,
@@ -302,6 +310,17 @@ main{padding:16px;max-width:760px;margin:0 auto;}
   box-shadow:0 14px 40px -16px rgba(255,193,69,.18), 0 10px 30px -14px rgba(0,0,0,.6);
 }
 .chart-wrap{position:relative;height:230px;}
+.chart-wrap canvas{
+  /* tells the browser upfront: vertical drags are always a normal page
+     scroll (handle it natively, instantly, no hesitation), horizontal
+     drags are not — so JS gets those events immediately without the
+     browser first spending a few pixels deciding "is this a scroll?"
+     and locking into that answer for the rest of the gesture. Without
+     this, a slow/gentle horizontal drag could get swallowed as an
+     ambiguous scroll attempt and only a fast, forceful swipe reliably
+     registered as chart interaction. */
+  touch-action: pan-y;
+}
 .hero .chart-wrap{height:270px;}
 
 /* leaderboard */
@@ -497,7 +516,7 @@ footer .rules b{color:var(--gold);}
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "2.5.1"; // bump this + add a line to the changelog comment at the top of the file
+const APP_VERSION = "2.5.2"; // bump this + add a line to the changelog comment at the top of the file
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSNO0Lp5FBIBKtYQZmzZBPnWGSmXhWq1ixOEICPAsWbpCNbxMoZ-mAqvDkcJQnHx_f7NGxiwk6V9AEO/pub?gid=803347701&single=true&output=csv";
 const TOTAL_GAMEWEEKS = 38;
 const GW_BLOCK_START_COL = 2; // 0-indexed column C: first GW's "GW Points" cell
@@ -904,10 +923,10 @@ function hapticTick(){
 // gameweek — without this, "Jump to latest" moved the board and marker
 // back but left the old gameweek's tooltip visibly stuck on screen.
 function clearTooltip(chart){
-  try {
-    chart.tooltip.setActiveElements([], { x: 0, y: 0 });
-    chart.update("none");
-  } catch(e){}
+  // just clear the active-elements state here — whatever calls this always
+  // triggers its own chart.update() right after, so we let that single
+  // update pick up the change instead of forcing a second render pass
+  try { chart.tooltip.setActiveElements([], { x: 0, y: 0 }); } catch(e){}
 }
 
 // Fires a haptic tick each time the dragged/hovered gameweek index changes —
